@@ -6,7 +6,7 @@ init -990 python in mas_submod_utils:
         name="Submod Updater Plugin",
         description=(
             "A util submod that makes updating other submods easier. "
-            "More information on the project's {a=https://github.com/Booplicate/MAS-Submods-SubmodsUpdaterPlugin}{i}{u}GitHub{/u}{/i}{/a}."
+            "More information on the project's {a=https://github.com/Booplicate/MAS-Submods-SubmodUpdaterPlugin}{i}{u}GitHub{/u}{/i}{/a}."
         ),
         version="1.0",
         settings_pane="sup_setting_pane"
@@ -17,7 +17,7 @@ init -980 python in sup_utils:
     SubmodUpdater(
         submod="Submod Updater Plugin",
         user_name="Booplicate",
-        repository_name="MAS-Submods-SubmodsUpdaterPlugin"
+        repository_name="MAS-Submods-SubmodUpdaterPlugin"
     )
 
 # # # SUBMODUPDATER CLASS
@@ -26,13 +26,14 @@ init -981 python in sup_utils:
     import store.mas_utils as mas_utils
     import re
     import os
+    import shutil
     import datetime
     import time
     import urllib2
     import threading
+    from store import ConditionSwitch
     from json import loads as loadJSON
     from zipfile import ZipFile
-    from shutil import rmtree as removeFolders
     from subprocess import Popen as subprocOpen
     from webbrowser import open as openBrowser
 
@@ -48,7 +49,10 @@ init -981 python in sup_utils:
                 submod - pointer to the submod object
                 should_notify - whether or not we notify the user about updates
                 auto_check - whether or not we automically check for updates
+                allow_updates - whether or not allow the user to install updtes for this submod
                 submod_dir - the relative file path to the submod directory
+                update_dir - directory where updates will be installed to
+                extraction_depth - depth of the recursion for the update extractor
                 json - json data about submod from GitHub
                 last_update_check - datetime.datetime the last time we checked for update
                 update_available - whether or not we have an update available
@@ -57,7 +61,6 @@ init -981 python in sup_utils:
                 user_name - the author's user name on GitHub
                 repository_name - the submod's GitHub repository name
                 attachment_id - id of the attachment on GitHub (usually 0)
-                raise_critical - flag whether or not we raise CRITICAL exceptions
                 updating - flag whether or not we're currently updating the submod
                 updated - flag whether was the submod updated
         """
@@ -85,7 +88,7 @@ init -981 python in sup_utils:
         updateDownloadLock = threading.Lock()
 
         # normalized path of the game directory
-        GAME_FOLDER = renpy.config.basedir.replace("\\", "/")
+        BASE_DIRECTORY = renpy.config.basedir.replace("\\", "/")
 
         FOLDER_NAME_PATTERN = re.compile(r"[^a-zA-Z0-9_]")
 
@@ -96,7 +99,19 @@ init -981 python in sup_utils:
         # a map of submods which we will check for updates
         registered_updaters = dict()
 
-        def __init__(self, submod, user_name, repository_name, should_notify=True, auto_check=True, attachment_id=0, submod_dir=None, raise_critical=True):
+        def __init__(
+            self,
+            submod,
+            user_name,
+            repository_name,
+            should_notify=True,
+            auto_check=True,
+            allow_updates=True,
+            submod_dir=None,
+            update_dir=None,
+            extraction_depth=1,
+            attachment_id=0
+        ):
             """
             Constructor
 
@@ -109,25 +124,36 @@ init -981 python in sup_utils:
                 repository_name - the submod's GitHub repository name
 
                 should_notify - whether or not we notify the user about updates
+                    This includes both: showing notifies and showing update information on the submod screen
                     (Default: True)
 
                 auto_check - whether or not we automically check for updates (this's not auto updating)
                     (Default: True)
 
+                allow_updates - whether or not allow the user to install updtes for this submod
+                    If True there wll be a button to prompt for the update in the submod screen
+                    If False you'll need to implement another way to update (or don't if you only want to notify about updates)
+                    (Default: True)
+
+                submod_dir - relative file path to the directory of the submod
+                    e.g. 'game/.../your submod folder'
+                    NOTE: if None, the updater will try to find the path itself
+                    NOTE: if None when we're trying to update the submod and no update_dir specified, the update will be aborted
+                    (Default: None)
+
+                update_dir - directory where updates will be installed to
+                    NOTE: if None, updates will be installed in the submod directory if one was specified
+                    NOTE: if empty string, updates will be installed right in the base directory (the folder with DDLC.exe)
+                    (Defaut: None)
+
+                extraction_depth - extraction depth, depth of the recursion for the update extractor
+                    See the __extract_files method for more info
+                    (Defaut: 1)
+
                 attachment_id - id of the attachment on GitHub
                     (only if you have more than one attachment in releases, not counting source code)
                     NOTE: if set to None, the updater will download the source files
                     (Default: 0)
-
-                submod_dir - the relative file path to the directory of the submod
-                    e.g. 'game/.../your submod folder'
-                    NOTE: if None, the updater will try to find the path itself
-                    NOTE: if None when we're trying to update the submod, the update will be aborted
-                    (Default: None)
-
-                raise_critical - whether or not we raise CRITICAL exceptions
-                    e.g. when we know that there're files that should be MANUALLY deleted due to an error
-                    (Default: True)
             """
             if isinstance(submod, basestring):
                 submod_name = submod
@@ -135,7 +161,7 @@ init -981 python in sup_utils:
 
             elif isinstance(submod, mas_submod_utils.Submod):
                 submod_name = submod.name
-                submod_obj = mas_submod_utils.submod_map.get(submod.name, None)
+                submod_obj = submod
 
             else:
                 raise SubmodError(
@@ -157,9 +183,11 @@ init -981 python in sup_utils:
             self.__repository_name = repository_name
             self.should_notify = should_notify
             self.auto_check = auto_check
-            self.__attachment_id = attachment_id
+            self.allow_updates = allow_updates
             self._submod_dir = submod_dir or self.__getFilePath()
-            self.__raise_critical = raise_critical
+            self._update_dir = update_dir
+            self._extraction_depth = extraction_depth
+            self.__attachment_id = attachment_id
 
             self.__json_request = self.__buildJSONRequest()
             self._json = None
@@ -169,9 +197,9 @@ init -981 python in sup_utils:
             self.__updating = False
 
             self.__updateCheckLock = threading.Lock()
-            self.__updateAvailablePropLock = threading.Lock()
-            self.__updatingPropLock = threading.Lock()
-            self.__updatedPropLock = threading.Lock()
+            # self.__updateAvailablePropLock = threading.Lock()
+            # self.__updatingPropLock = threading.Lock()
+            # self.__updatedPropLock = threading.Lock()
 
             self.registered_updaters[self.id] = self
 
@@ -234,13 +262,18 @@ init -981 python in sup_utils:
             return None
 
         @property
+        def is_updating(self):
+            """
+            Returns a bool whether we're updating this submod now
+            """
+            return self.__updating
+
+        @property
         def has_updated(self):
             """
             Returns a bool whether we updated this submod
             """
-            with self.__updatedPropLock:
-                value = self.__updated
-            return value
+            return self.__updated
 
         def toggleNotifs(self):
             """
@@ -253,6 +286,12 @@ init -981 python in sup_utils:
             Toggles the auto_check property
             """
             self.auto_check = not self.auto_check
+
+        def toggleUpdates(self):
+            """
+            Toggles the allow_updates property
+            """
+            self.allow_updates = not self.allow_updates
 
         def __getFilePath(self):
             """
@@ -397,6 +436,27 @@ init -981 python in sup_utils:
                 "update_package_url": update_package_url
             }
 
+        def getDirectory(self, absolute=True):
+            """
+            Returns the submod directory
+
+            IN:
+                absolute - True to return the absolute path,
+                    False to return the relative one
+
+            OUT:
+                string with the path, or None if we couldn't find it
+            """
+            path = None
+            if self._submod_dir is not None:
+                if absolute:
+                    path = os.path.join(self.BASE_DIRECTORY, self._submod_dir).replace("\\", "/")
+
+                else:
+                    path = self._submod_dir
+
+            return path
+
         def _checkUpdate(self, bypass=False):
             """
             Checks for updates for this submod
@@ -420,9 +480,6 @@ init -981 python in sup_utils:
                 ):
                     self._last_update_check = _now
 
-                with self.__updateAvailablePropLock:
-                    temp_value = self._update_available
-
                 # if we checked for update recently, we'll skip this check
                 if (
                     bypass
@@ -436,20 +493,16 @@ init -981 python in sup_utils:
                     self._last_update_check = datetime.datetime.now()
 
                     # sanity check
-                    if not self._json:
-                        temp_value = False
+                    if (
+                        self._json
+                        and self._json["latest_version"] != self._submod.version
+                    ):
+                        self._update_available = True
 
                     else:
-                        if self._json["latest_version"] != self._submod.version:
-                            temp_value = True
+                        self._update_available = False
 
-                        else:
-                            temp_value = False
-
-                    with self.__updateAvailablePropLock:
-                        self._update_available = temp_value
-
-                return temp_value
+            return self._update_available
 
         def _checkUpdateInThread(bypass=False):
             """
@@ -467,7 +520,7 @@ init -981 python in sup_utils:
 
             update_checker.start()
 
-        def isUpdateAvailable(self, should_check=True):
+        def hasUpdate(self, should_check=True):
             """
             Geneal way to check whether or not
             there's an update for this submod
@@ -481,24 +534,14 @@ init -981 python in sup_utils:
                 True if there's an update,
                 False otherwise
             """
-            # Order of accessing these is important
-            with self.__updatingPropLock:
-                updating = self.__updating
-
-            with self.__updatedPropLock:
-                updated = self.__updated
-
-            with self.__updateAvailablePropLock:
-                update_available = self._update_available
-
             if (
-                updated
-                or updating
+                self.__updating
+                or self.__updated
             ):
                 return False
 
-            if update_available is not None:
-                return update_available
+            if self._update_available is not None:
+                return self._update_available
 
             if should_check:
                 return self._checkUpdate()
@@ -506,24 +549,21 @@ init -981 python in sup_utils:
             else:
                 return False
 
-        def _downloadUpdate(self, update_dir=None, extraction_depth=0, temp_folder_name=None):
+        def _downloadUpdate(self, update_dir=None, extraction_depth=1):
             """
             Download the latest update for the submod
             NOTE: does not check for update
             NOTE: won't do anything if we're still updating another submod
+            NOTE: For internal uses the arguments for this method the updater will take from the properties
 
             IN:
                 update_dir - the directory the updater will extract this update into
                     NOTE: if None, the update will be installed in the submod directory
-                    NOTE: if empty string, the update will be installed right in the game directory (the folder with DDLC.exe)
+                    NOTE: if empty string, the update will be installed right in the base directory (the folder with DDLC.exe)
                     (Defaut: None)
 
-                extraction_depth - the extraction depth, check the __extract_files method for explanation
-                    (Default: 0)
-
-                temp_folder_name - the name of the folder for keeping temp files for this update
-                    NOTE: if None, the updater will generate one
-                    (Default: None)
+                extraction_depth - extraction depth, check the __extract_files method for explanation
+                    (Default: 1)
 
             OUT:
                 True if we successfully downloaded and installed the update,
@@ -533,107 +573,109 @@ init -981 python in sup_utils:
             def __check_filepath(path):
                 """
                 Checks the given path and makes folders if needed
+
+                IN:
+                    path - path to check
                 """
                 try:
                     if not os.path.isdir(path):
                         os.makedirs(path)
 
+                    return True
+
                 except Exception as e:
                     self.__writeLog("Failed to check/create folders.", e)
+                    return False
 
-            def __extract_files(curr_path, new_path, depth=0):
+            def __extract_files(srs, dst, depth=0):
                 """
                 A helper method to extract files from one folder into another
                 using the given depth to extract items from
 
                 For example:
-                    File in '/old_folder/sub_folder/file'
-                    - with the depth 0 would be extracted as '/new_folder/sub_folder/file'
-                    - with the depth 1 (and more in this case) would be extracted as '/new_folder/file'
+                    File in 'old_folder/sub_folder/file'
+                    - with the depth 0 would be extracted as 'new_folder/sub_folder/file'
+                    - with the depth 1 (and more in this case) would be extracted as 'new_folder/file'
 
                 if the extracting object is a file, it would be moved to the destination
                 regardless of the depth used
 
-                NOTE: new_path can't end up inside curr_path
-                NOTE: unsafe: no checks, nor try/except blocks
+                NOTE: dst can't end up inside srs
 
                 IN:
-                    curr_path - the folder which we'll extract files from
+                    srs - the folder which we'll extract files from
                     new_path - the destination
-                    depth - the depth of recursion
+                    depth - depth of the recursion
+
+                OUT:
+                    list of exceptions (it can be empty)
                 """
-                if os.path.isdir(curr_path):
-                    for item in os.listdir(curr_path):
-                        if depth > 0:
-                            _curr_path = curr_path + "/" + item
-                            _depth = depth - 1
+                exceptions = []
+                if os.path.isdir(srs):
+                    for item in os.listdir(srs):
+                        new_srs = os.path.join(srs, item).replace("\\", "/")
+                        new_dst = os.path.join(dst, item).replace("\\", "/")
+                        new_depth = depth - 1
 
-                            __extract_files(_curr_path, new_path, _depth)
-
-                        else:
-                            _curr_path = curr_path + "/" + item
-                            _new_path = new_path + "/" + item
-
-                            if os.path.exists(_new_path):
-                                if os.path.isfile(_new_path):
-                                    os.remove(_new_path)
-
-                                else:
-                                    removeFolders(_new_path, ignore_errors=True)
-
-                            os.rename(_curr_path, _new_path)
-
-                else:
-                    _new_path = new_path + "/" + curr_path.rpartition("/")[-1]
-
-                    if os.path.exists(_new_path):
-                        if os.path.isfile(_new_path):
-                            os.remove(_new_path)
+                        if (
+                            depth > 0
+                            and os.path.isdir(new_srs)
+                        ):
+                            rv = __extract_files(new_srs, dst, new_depth)
+                            exceptions += rv
 
                         else:
-                            removeFolders(_new_path, ignore_errors=True)
+                            if os.path.isdir(new_dst):
+                                rv = __extract_files(new_srs, new_dst, 0)
+                                exceptions += rv
 
-                    os.rename(curr_path, _new_path)
+                            elif os.path.isfile(new_dst):
+                                try:
+                                    os.remove(new_dst)
+                                    shutil.move(new_srs, dst)
 
-            def __delete_update_files(*paths):
+                                except Exception as e:
+                                    exceptions.append(str(e))
+
+                            else:
+                                try:
+                                    shutil.move(new_srs, dst)
+
+                                except Exception as e:
+                                    exceptions.append(str(e))
+
+                return exceptions
+
+            def __delete_update_files(path):
                 """
                 Tries to delete files in path
-                NOTE: no exceptions/no logs
 
                 IN:
-                    paths - paths to files
+                    path - path to files
                 """
-                for path in paths:
-                    try:
-                        if os.path.isdir(path):
-                            removeFolders(path, ignore_errors=True)
+                try:
+                    if os.path.isdir(path):
+                        shutil.rmtree(path, ignore_errors=True)
 
-                        elif os.path.isfile(path):
-                            os.remove(path)
-                    except:
-                        pass
+                    elif os.path.isfile(path):
+                        os.remove(path)
+                except Exception as e:
+                    self.__writeLog("Failed to delete temp files: {0}".format(path), e)
+
             # # # End of helper methods defination
 
             # only allow one update at a time 
             with self.updateDownloadLock:
-                with self.__updatingPropLock:
-                    self.__updating = True
+                self.__updating = True
 
                 # # # Sanity checks
-                with self.__updatedPropLock:
-                    updated = self.__updated
-
-                with self.__updateAvailablePropLock:
-                    update_available = self._update_available
-
                 if (
-                    updated
-                    or not update_available
+                    self.__updated
+                    or not self._update_available
                 ):
                     self.__writeLog("Aborting update. No new updates for '{0}' found.".format(self.id))
 
-                    with self.__updatingPropLock:
-                        self.__updating = False
+                    self.__updating = False
 
                     return False
 
@@ -643,58 +685,69 @@ init -981 python in sup_utils:
                 ):
                     self.__writeLog("Failed to update. Missing update JSON data.")
 
-                    with self.__updatingPropLock:
-                        self.__updating = False
+                    self.__updating = False
 
                     return False
 
                 # # # Set the paths
-                if temp_folder_name is None:
-                    temp_folder_name = "temp_{0}_{1}".format(
-                        re.sub(self.FOLDER_NAME_PATTERN, "_", self.id).lower(),
-                        int(time.time())
-                    )
 
-                if update_dir is None:
-                    if not self._submod_dir:
-                        self.__writeLog("Failed to update. Couldn't locate the submod directory for update.")
+                # You decided to install the update into the base dir
+                if update_dir == "":
+                    update_dir = self.BASE_DIRECTORY
 
-                        with self.__updatingPropLock:
+                else:
+                    # If we don't know the folder yet, try to get the one where we have the submod in
+                    if update_dir is None:
+                        if not self._submod_dir:
+                            self.__writeLog("Failed to update. Couldn't locate the submod directory.")
+
                             self.__updating = False
 
-                        return False
+                            return False
 
-                    update_dir = self._submod_dir
+                        update_dir = self._submod_dir
 
-                # make it an absolute path if needed
-                if self.GAME_FOLDER not in update_dir:
-                    if update_dir:
-                        update_dir = "{0}{1}{2}".format(
-                            self.GAME_FOLDER,
-                            "/",
-                            update_dir
-                        )
+                    # Make it an absolute path if needed
+                    if self.BASE_DIRECTORY not in update_dir:
+                        update_dir = os.path.join(self.BASE_DIRECTORY, update_dir).replace("\\", "/")
+                        # update_dir = "{0}{1}{2}".format(
+                        #     self.BASE_DIRECTORY,
+                        #     "/",
+                        #     update_dir
+                        # )
 
-                    else:
-                        update_dir = self.GAME_FOLDER
-
-                path_to_temp_files = "{0}{1}{2}{3}{4}".format(
-                    self.GAME_FOLDER,
-                    "/",
-                    self._submod_dir,
-                    "/",
-                    temp_folder_name
+                # if temp_folder_name is None:
+                temp_folder_name = "temp_{0}_{1}".format(
+                    re.sub(self.FOLDER_NAME_PATTERN, "_", self.id).lower(),
+                    int(time.time())
                 )
+
+                temp_files_dir = os.path.join(self.BASE_DIRECTORY, self._submod_dir, temp_folder_name).replace("\\", "/")
+                # temp_files_dir = "{0}{1}{2}{3}{4}".format(
+                #     self.BASE_DIRECTORY,
+                #     "/",
+                #     self._submod_dir,
+                #     "/",
+                #     temp_folder_name
+                # )
+
                 temp_file_name = "update.zip"
-                temp_file = "{0}{1}{2}".format(
-                    path_to_temp_files,
-                    "/",
-                    temp_file_name
-                )
+
+                temp_file = os.path.join(temp_files_dir, temp_file_name).replace("\\", "/")
+                # temp_file = "{0}{1}{2}".format(
+                #     temp_files_dir,
+                #     "/",
+                #     temp_file_name
+                # )
 
                 # # # Check the paths
-                __check_filepath(path_to_temp_files)
-                __check_filepath(update_dir)
+                path_1 = __check_filepath(temp_files_dir)
+                path_2 = __check_filepath(update_dir)
+
+                # abort if we weren't able to create the folders
+                if not path_1 or not path_2:
+                    self.__updating = False
+                    return False
 
                 update_url = self._json["update_package_url"]
                 update_request = urllib2.Request(
@@ -711,8 +764,7 @@ init -981 python in sup_utils:
                 except Exception as e:
                     self.__writeLog("Failed to update. Failed to request update size.", e)
 
-                    with self.__updatingPropLock:
-                        self.__updating = False
+                    self.__updating = False
 
                     return False
 
@@ -720,8 +772,8 @@ init -981 python in sup_utils:
                 bytes_downloaded = 0
                 bottom_bracket = 0
                 top_bracket = self.REQUEST_CHUNK
-                temp_headers = dict(self.HEADERS)
-                temp_headers.update(
+                downloading_headers = dict(self.HEADERS)
+                downloading_headers.update(
                     {
                         "Range": "bytes={0}-{1}".format(
                             bottom_bracket,
@@ -729,8 +781,7 @@ init -981 python in sup_utils:
                         )
                     }
                 )
-
-                update_request = urllib2.Request(url=update_url, headers=temp_headers)
+                update_request = urllib2.Request(url=update_url, headers=downloading_headers)
 
                 # # # Start updating
                 try:
@@ -747,94 +798,57 @@ init -981 python in sup_utils:
 
                             if (
                                 bytes_downloaded == top_bracket
-                                and not bytes_downloaded == update_size
+                                and bytes_downloaded != update_size
                             ):
                                 bottom_bracket = top_bracket
                                 top_bracket += self.REQUEST_CHUNK
-                                temp_headers["Range"] = "bytes={0}-{1}".format(bottom_bracket, top_bracket)
-                                update_request = urllib2.Request(url=update_url, headers=temp_headers)
+                                downloading_headers["Range"] = "bytes={0}-{1}".format(bottom_bracket, top_bracket)
+                                update_request = urllib2.Request(url=update_url, headers=downloading_headers)
                                 response = urllib2.urlopen(update_request, timeout=15)
 
                 except Exception as e:
                     self.__writeLog("Failed to download update.", e)
-                    __delete_update_files(path_to_temp_files)
 
-                    if self.__raise_critical:
-                        raise SubmodError(
-                            "\n  Failed to download update. You may need to manually delete this folder and all files inside:\n    \"{0}\"".format(
-                                path_to_temp_files
-                            )
-                        )
+                    __delete_update_files(temp_files_dir)
 
-                    with self.__updatingPropLock:
-                        self.__updating = False
+                    self.__updating = False
 
                     return False
 
                 try:
                     # unzip :S
                     with ZipFile(temp_file, "r") as update_file:
-                        update_file.extractall(path_to_temp_files)
+                        update_file.extractall(temp_files_dir)
 
                 except Exception as e:
                     self.__writeLog("Failed to extract update.", e)
-                    __delete_update_files(path_to_temp_files)
 
-                    if self.__raise_critical:
-                        raise SubmodError(
-                            "\n  Failed to extract update. You may need to manually delete this folder and all files inside:\n    \"{0}\"".format(
-                                path_to_temp_files
-                            )
-                        )
+                    __delete_update_files(temp_files_dir)
 
-                    with self.__updatingPropLock:
-                        self.__updating = False
+                    self.__updating = False
 
                     return False
 
                 # delete update.zip
-                try:
-                    os.remove(temp_file)
-
-                except Exception as e:
-                    # this's not so bad, we can continue updating
-                    self.__writeLog("Failed to delete temp files.", e)
+                # even if it fails, it's not so bad, we can continue updating
+                __delete_update_files(temp_file)
 
                 # move the files
-                try:
-                    __extract_files(path_to_temp_files, update_dir, extraction_depth)
+                exceptions = __extract_files(temp_files_dir, update_dir, extraction_depth)
 
-                except Exception as e:
-                    self.__writeLog("Failed to move update files.", e)
-                    __delete_update_files(path_to_temp_files, update_dir)
+                # even if we fail here, it's too late to abort now
+                # but we can log exceptions
+                if exceptions:
+                    self.__writeLog("Failed to move update files. Exceptions:\n" + "\n".join(exceptions))
 
-                    if self.__raise_critical:
-                        raise SubmodError(
-                            (
-                                "\n  Failed to move update files. You may need to manually delete these folders and all files inside:"
-                                "\n    \"{0}\""
-                                "\n    \"{1}\""
-                                "\n  After that you'll need to reinstall the \"{2}\" v{3} submod."
-                            ).format(
-                                path_to_temp_files,
-                                update_dir,
-                                self.id,
-                                self._json["latest_version"]
-                            )
-                        )
+                    # __delete_update_files(temp_files_dir)
 
-                    with self.__updatingPropLock:
-                        self.__updating = False
+                    # self.__updating = False
 
-                    return False
+                    # return False
 
                 # delete temp folders
-                try:
-                    removeFolders(path_to_temp_files, ignore_errors=True)
-
-                except Exception as e:
-                    # this's not so bad, we can finish updating
-                    self.__writeLog("Failed to remove temp folders.", e)
+                __delete_update_files(temp_files_dir)
 
                 self.__writeLog(
                     "Downloaded and installed the {0} update for '{1}'.".format(
@@ -844,53 +858,121 @@ init -981 python in sup_utils:
                     is_error=False
                 )
 
-                with self.__updatingPropLock:
-                    self.__updating = False
-
-                with self.__updatedPropLock:
-                    self.__updated = True
+                self.__updating = False
+                self.__updated = True
 
                 return True
 
-        def downloadUpdateInThread(self, update_dir=None, extraction_depth=0, temp_folder_name=None):
+            return False
+
+        def downloadUpdateInThread(self, update_dir=None, extraction_depth=1):
             """
             Download the latest update for the submod using threading
             (basically runs _downloadUpdate in a thread)
             NOTE: does not check for update
             NOTE: won't do anything if we're still updating another submod
+            NOTE: For internal uses the arguments for this method the updater will take from the properties
 
             IN:
                 update_dir - the directory the updater will extract this update into
                     NOTE: if None, the update will be installed in the submod directory
-                    NOTE: if empty string, the update will be installed right in the game directory (with DDLC.exe)
+                    NOTE: if empty string, the update will be installed right in the base directory (with DDLC.exe)
                     (Defaut: None)
 
                 extraction_depth - the extraction depth, check the main method for explanation
-                    (Default: 0)
-
-                temp_folder_name - the name of the folder for keeping temp files for this update
-                    NOTE: if None, the updater will generate one
-                    (Default: None)
+                    (Default: 1)
             """
             downloader = threading.Thread(
                 target=self._downloadUpdate,
-                kwargs=dict(update_dir=update_dir, extraction_depth=extraction_depth, temp_folder_name=temp_folder_name)
+                kwargs=dict(update_dir=update_dir, extraction_depth=extraction_depth)
             )
 
             downloader.start()
 
+        def _checkDependencies(self):
+            """
+            Checks if some of other submods will have issues if we update this submod
+            NOTE: doesn't actually forbid updating, only prompts the user
+
+            OUT:
+                list of tuples with conflicting submods
+                    format: (submod name, max supported/required version of this submod)
+            """
+            def __parse_version(version):
+                """
+                Parses a string version number to list format
+                INFO: This method was borrowed from the submod framework
+
+                IN:
+                    version - version string to parse
+
+                OUT:
+                    list - representing the parsed version number
+                """
+                return map(int, version.split('.'))
+
+            # we shouldn't get here if we don't have the version number
+            if self.latest_version is None:
+                return False
+
+            conflicting_submods = []
+
+            for submod in mas_submod_utils.submod_map.itervalues():
+                # so it doesn't check itself
+                if submod is not self._submod:
+                    # we can get by name since we know what we're looking for
+                    minmax_version_tuple = submod.dependencies.get(self._submod.name, None)
+
+                    if (
+                        minmax_version_tuple is not None
+                        and len(minmax_version_tuple) > 1
+                    ):
+                        max_version = minmax_version_tuple[1]
+
+                        if max_version:
+                            rv = mas_utils.compareVersionLists(
+                                __parse_version(max_version),
+                                __parse_version(self.latest_version)
+                            )
+
+                            # we should prompt the user that this one might cause issues
+                            if rv < 0:
+                                conflicting_submods.append((submod.name, max_version))
+
+            return conflicting_submods
+
         @classmethod
-        def getUpdater(cls, name):
+        def getDirectoryFor(cls, submod_name, absolute=True):
+            """
+            Returns the file path to a submod directory
+
+            IN:
+                submod_name - the name of the submod
+                absolute - True to return the absolute path,
+                    False to return the relative one
+
+            OUT:
+                string with the path,
+                or None if we couldn't find it or submod doesn't exist
+            """
+            updater = cls.getUpdater(submod_name)
+            if updater:
+                return updater.getDirectory(absolute=absolute)
+
+            return None
+
+        @classmethod
+        def getUpdater(cls, submod_name):
             """
             Gets an updater from the map
 
             IN:
-                name - name of the updater
+                submod_name - id of the updater
 
             OUR:
                 SubmodUpdater object, or None if not found.
             """
-            return cls.registered_updaters.get(name, None)
+            return cls.registered_updaters.get(submod_name, None)
 
         @classmethod
         def _isUpdatingAny(cls):
@@ -902,9 +984,8 @@ init -981 python in sup_utils:
                 False otherwise
             """
             for updater in cls.registered_updaters.itervalues():
-                with updater.__updatingPropLock:
-                    if updater.__updating:
-                        return True
+                if updater.__updating:
+                    return True
 
             return False
 
@@ -912,7 +993,7 @@ init -981 python in sup_utils:
         def hasUpdateFor(cls, submod_name, should_check=True):
             """
             Checks if there's an update for a submod
-            (basically checks isUpdateAvailable)
+            (basically checks hasUpdate)
 
             IN:
                 submod_name - name of the submod to check
@@ -926,7 +1007,7 @@ init -981 python in sup_utils:
             """
             updater = cls.getUpdater(submod_name)
             if updater is not None:
-                return updater.isUpdateAvailable(should_check=should_check)
+                return updater.hasUpdate(should_check=should_check)
 
             return False
 
@@ -941,7 +1022,7 @@ init -981 python in sup_utils:
             for updater in cls.registered_updaters.itervalues():
                 if (
                     updater.should_notify
-                    and updater.isUpdateAvailable(should_check=False)
+                    and updater.hasUpdate(should_check=False)
                 ):
                     additional_lines.append(
                         "\n    '{0}'  {1}  >>>  {2}  ".format(
@@ -1021,7 +1102,7 @@ init -981 python in sup_utils:
             return [
                 updater
                 for updater in cls.registered_updaters.itervalues()
-                if updater.isUpdateAvailable(should_check=False)
+                if updater.hasUpdate(should_check=False)
             ]
 
         @classmethod
@@ -1038,40 +1119,36 @@ init -981 python in sup_utils:
         @classmethod
         def getIcon(cls, submod_name):
             """
-            Returns an appropriate image for different update states
-            TODO: consider using condition switch
+            Returns ConditionSwitch image for different update states
 
             IN:
                 submod_name - name of the submod to get img for
 
             OUT:
-                the img name as a string,
-                or None if no appropriate img found
+                ConditionSwitch,
+                or None if submod doesn't exist
             """
-            img = None
-            updater = cls.getUpdater(submod_name)
+            # sanity check
+            if cls.getUpdater(submod_name) is None:
+                return None
 
-            if updater is not None:
-                with updater.__updatingPropLock:
-                    updating = updater.__updating
+            general_str = "store.sup_utils.SubmodUpdater.getUpdater('{}')".format(submod_name)
 
-                with updater.__updatedPropLock:
-                    updated = updater.__updated
+            is_updating_condition = general_str + ".is_updating"
+            updating_img = "sup_indicator_update_downloading"
+            is_update_available_condition = general_str + ".hasUpdate(should_check=False)"
+            has_update_img = "sup_indicator_update_available"
+            always_true_condition = "True"
+            place_holder = "sup_indicator_no_update"
 
-                with updater.__updateAvailablePropLock:
-                    update_available = updater._update_available
-
-                # updating has priority
-                if updating:
-                    img = "sup_indicator_update_downloading"
-
-                elif (
-                    update_available
-                    and not updated
-                ):
-                    img = "sup_indicator_update_available"
-
-            return img
+            return ConditionSwitch(
+                is_updating_condition,
+                updating_img,
+                is_update_available_condition,
+                has_update_img,
+                always_true_condition,
+                place_holder
+            )
 
         @staticmethod
         def __writeLog(msg, e=None, is_error=True):
@@ -1082,13 +1159,15 @@ init -981 python in sup_utils:
                 msg - the message to write
                 e - the exception to log
                     (Default: None)
+                is_error - whether or not this logs an error
+                    (Default: True)
             """
-            error = " ERROR" if is_error else " REPORT"
+            message_type = " ERROR" if is_error else " REPORT"
             if e is None:
-                _text = "[SUBMOD UPDATER PLUGIN{0}]: {1}\n".format(error, msg)
+                _text = "[SUBMOD UPDATER PLUGIN{0}]: {1}\n".format(message_type, msg)
 
             else:
-                _text = "[SUBMOD UPDATER PLUGIN{0}]: {1} Exception: {2}\n".format(error, msg, e)
+                _text = "[SUBMOD UPDATER PLUGIN{0}]: {1} Exception: {2}\n".format(message_type, msg, e)
 
             mas_utils.writelog(_text)
 
@@ -1157,8 +1236,9 @@ init -981 python in sup_utils:
 
 # # # Icons for different update states
 image sup_indicator_update_downloading:
-    "/Submods/Submod Updater Plugin/indicator_update_downloading.png"
+    store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + "/indicator_update_downloading.png"
     align (0.5, 0.5)
+    ypos 1
     alpha 0.0
     zoom 1.1
     subpixel True
@@ -1168,7 +1248,7 @@ image sup_indicator_update_downloading:
         repeat
 
 image sup_indicator_update_available:
-    "/Submods/Submod Updater Plugin/indicator_update_available.png"
+    store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + "/indicator_update_available.png"
     align (0.5, 0.5)
     alpha 0.0
     zoom 1.2
@@ -1178,16 +1258,38 @@ image sup_indicator_update_available:
         ease 0.75 alpha 0.1
         repeat
 
+# basically a placeholder
+image sup_indicator_no_update = Solid("#00000000", xsize=20, ysize=20)
+
+# predefine these to save some performance
+image sup_indicator_updating_1 = Text("Updating a submod")
+image sup_indicator_updating_2 = Text("Updating a submod.")
+image sup_indicator_updating_3 = Text("Updating a submod..")
+image sup_indicator_updating_4 = Text("Updating a submod...")
+
+image sup_indicator_updating:
+    xanchor 0
+    subpixel True
+    block:
+        "sup_indicator_updating_1"
+        pause 0.75
+        "sup_indicator_updating_2"
+        pause 0.75
+        "sup_indicator_updating_3"
+        pause 0.75
+        "sup_indicator_updating_4"
+        pause 0.75
+        repeat
+
 # # # Confirm screen
 #
 # IN:
-#    message - the message to display
-#    yes_action - the action to do when the user presses the `Yes` button
-#       (Default: NullAction)
-#    no_action - the action to do when the user presses the `No` button
-#       (Default: Hide("sup_confirm_screen"))
+#    submod_updater - updater
 #
-screen sup_confirm_screen(message, yes_action=NullAction(), no_action=Hide("sup_confirm_screen")):
+screen sup_confirm_updating(submod_updater):
+    default conflicts = submod_updater._checkDependencies()
+    default total_conflicts = len(conflicts)
+
     modal True
 
     zorder 200
@@ -1200,18 +1302,86 @@ screen sup_confirm_screen(message, yes_action=NullAction(), no_action=Hide("sup_
             align (0.5, 0.5)
             spacing 30
 
-            label message:
+            label "Start updating [submod_updater.id] v[submod_updater._submod.version] to v[submod_updater.latest_version]?":
                 style "confirm_prompt"
                 xalign 0.5
+
+            if total_conflicts > 0:
+                viewport:
+                    ymaximum 200
+                    xmaximum 800
+                    xfill False
+                    yfill False
+                    mousewheel True
+                    scrollbars "vertical"
+
+                    vbox:
+                        spacing 10
+
+                        text "Warning:"
+
+                        for submod_name, max_version in conflicts:
+                            text "    - [submod_name] supports maximum v[max_version] of [submod_updater.id]"
+
+                        if total_conflicts > 1:
+                            text "Updating those submods to their newer versions might fix that issue."
+
+                        else:
+                            text "Updating that submod to its newer version might fix that issue."
 
             hbox:
                 xalign 0.5
                 spacing 100
 
                 textbutton "Yes":
-                    action yes_action
+                    action [
+                        Function(
+                            submod_updater.downloadUpdateInThread,
+                            update_dir=submod_updater._update_dir,
+                            extraction_depth=submod_updater._extraction_depth
+                        ),
+                        Hide("sup_confirm_updating"),
+                        Show("dialog", message="Please restart Monika After Story when you have finished installing updates.", ok_action=Hide("dialog"))
+                    ]
                 textbutton "No":
-                    action no_action
+                    action Hide("sup_confirm_updating")
+
+# # # Changelog screen
+#
+# IN:
+#    title - update title
+#    body - update changelog
+#
+screen sup_update_changelog(title, body):
+    modal True
+
+    zorder 200
+
+    style_prefix "confirm"
+    add mas_getTimeFile("gui/overlay/confirm.png")
+
+    frame:
+        vbox:
+            align (0.5, 0.5)
+            spacing 30
+
+            label title:
+                style "confirm_prompt"
+                xalign 0.5
+
+            viewport:
+                ymaximum 200
+                xmaximum 800
+                xfill False
+                yfill False
+                mousewheel True
+                scrollbars "vertical"
+
+                text body.replace("\n", "\n\n")
+
+            textbutton "Close":
+                xalign 0.5
+                action Hide("sup_update_changelog")
 
 # # # Submod screen
 screen sup_setting_pane():
@@ -1227,58 +1397,46 @@ screen sup_setting_pane():
             OUT:
                 int
             """
-            total_items = len(items)
-            limit = 99
-            height = total_items * 33
+            height = 0
+            limit = 160
+            for item in items:
+                if item.should_notify:
+                    height += 40
+
+                    if item.allow_updates:
+                        height += 20
+
             return height if height <= limit else limit
 
-    # vars for all other submods
-    default has_outdated_submods = store.sup_utils.SubmodUpdater.hasOutdatedSubmods()
-    default updaters = store.sup_utils.SubmodUpdater.getUpdatersForOutdatedSubmods()
-    default new_updates_text = "New updates found:" if len(updaters) > 1 else "A new update found:"
+    default submod_updaters = store.sup_utils.SubmodUpdater.getUpdatersForOutdatedSubmods()
+    default new_updates_found_text = "New updates found:" if len(submod_updaters) > 1 else "A new update found:"
 
-    # vars for this submods
-    default sup_updater = store.sup_utils.SubmodUpdater.getUpdater("Submod Updater Plugin")
-    default update_icon = store.sup_utils.SubmodUpdater.getIcon("Submod Updater Plugin")
-    default vbox_ypos = -20 if update_icon is not None else 0
-
-    # NOTE: here we place the icon near the title
-    add update_icon:
-        pos (325, -102)
+    # add update_icon:
+    #     pos (325, -102)
 
     vbox:
-        # NOTE: the icon takes about 20 px of place, so we move everything below it up to that height
-        ypos vbox_ypos
+        ypos 0
         xmaximum 800
         xfill True
         yfill False
         style_prefix "check"
 
         if (
-            sup_updater
-            and store.sup_utils.SubmodUpdater.hasUpdateFor("Submod Updater Plugin", should_check=False)
+            store.sup_utils.SubmodUpdater.hasOutdatedSubmods()
             and not store.sup_utils.SubmodUpdater._isUpdatingAny()
         ):
-            # textbutton "Update Submod Updater Plugin":
-            #     pos (-24, 1)
-            #     action ShowTransient("sup_confirm_screen", message="This will open a new tab in your browser.", yes_action=Function(store.sup_utils.SubmodUpdater.openURL, sup_updater.update_page_url))
-            textbutton "Update Submod Updater Plugin":
-                pos (-24, 1)
-                action ShowTransient("sup_confirm_screen", message="Start updating Submod Updater Plugin v{0} to v{1}?".format(sup_updater._submod.version, sup_updater.latest_version), yes_action=Function(sup_updater.downloadUpdateInThread))
-
-        if has_outdated_submods:
             vbox:
                 xmaximum 800
                 xfill True
                 yfill False
 
-                text "[new_updates_text]"
+                text "[new_updates_found_text]"
 
                 hbox:
                     box_reverse True
                     viewport:
                         id "viewport"
-                        ymaximum 99
+                        ymaximum 160
                         xmaximum 780
                         xfill True
                         yfill False
@@ -1290,20 +1448,94 @@ screen sup_setting_pane():
                             yfill False
                             box_wrap False
 
-                            for updater in updaters:
-                                hbox:
-                                    xpos 20
-                                    spacing 20
-                                    xmaximum 780
+                            for submod_updater in submod_updaters:
+                                if submod_updater.should_notify:
+                                    hbox:
+                                        xpos 20
+                                        spacing 10
+                                        xmaximum 780
 
-                                    text "[updater._submod.name]"
-                                    text "v[updater._submod.version]"
-                                    text ">>>"
-                                    text "v[updater.latest_version]"
+                                        text "[submod_updater.id]"
+                                        text "v[submod_updater._submod.version]"
+                                        text " >>> "
+                                        text "v[submod_updater.latest_version]"
+
+                                    hbox:
+                                        xpos 20
+                                        spacing 10
+                                        xmaximum 780
+
+                                        textbutton "What's new?":
+                                            ypos 1
+                                            action ShowTransient(
+                                                "sup_update_changelog",
+                                                title=submod_updater.update_name,
+                                                body=submod_updater.update_changelog
+                                            )
+
+                                        if submod_updater.allow_updates:
+                                            textbutton "Update now!":
+                                                ypos 1
+                                                action ShowTransient("sup_confirm_updating", submod_updater=submod_updater)
 
                     bar:
                         style "classroom_vscrollbar"
                         xalign 0.005
-                        ymaximum __getScrollBarHeight(updaters)
+                        ymaximum __getScrollBarHeight(submod_updaters)
                         yfill False
                         value YScrollValue("viewport")
+
+        elif store.sup_utils.SubmodUpdater._isUpdatingAny():
+            add "sup_indicator_updating"
+
+# # # Overrides
+init 100:
+    screen submods():
+        tag menu
+
+        use game_menu(("Submods")):
+
+            default tooltip = Tooltip("")
+
+            viewport id "scrollme":
+                scrollbars "vertical"
+                mousewheel True
+                draggable True
+
+                vbox:
+                    style_prefix "check"
+                    xfill True
+                    xmaximum 1000
+
+                    for submod in sorted(store.mas_submod_utils.submod_map.values(), key=lambda x: x.name):
+                        vbox:
+                            xfill True
+                            xmaximum 1000
+
+                            hbox:
+                                spacing 10
+                                xmaximum 1000
+
+                                label submod.name yanchor 0 xalign 0
+
+                                add store.sup_utils.SubmodUpdater.getIcon(submod.name):
+                                    yanchor 0
+                                    ypos 18
+
+                            hbox:
+                                spacing 20
+                                xmaximum 1000
+
+                                text "v{}".format(submod.version) yanchor 0 xalign 0 style "main_menu_version"
+                                text "by {}".format(submod.author) yanchor 0 xalign 0 style "main_menu_version"
+
+                            if submod.description:
+                                text submod.description
+
+                        if submod.settings_pane:
+                            $ renpy.display.screen.use_screen(submod.settings_pane, _name="{0}_{1}".format(submod.author, submod.name))
+
+        text tooltip.value:
+            xalign 0 yalign 1.0
+            xoffset 300 yoffset -10
+            style "main_menu_version"
