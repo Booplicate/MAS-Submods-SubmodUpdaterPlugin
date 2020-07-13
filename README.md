@@ -80,8 +80,8 @@ Properties to access (only `get`) json data. These 5 can be `None` as a fallback
 - `update_package_url` - link to update attachments
 
 Properties to check status of the update (only `get`).
-`is_updating` - whether we're updating this submod now or not
-`has_updated` - whether we updated this submod or not
+- `is_updating` - whether we're updating this submod now or not
+- `has_updated` - whether we updated this submod or not
 
 Some other properties.
 - `id` - id/name of the updater **and** submod.
@@ -96,6 +96,9 @@ There're probably some more methods and properties. But it's **highly recommende
 
 ## Some important notes:
 Versioning of your submod and tags you're using on GitHub must be the same format (`0.0.1`).
+
 Requests to GitHub should be done with an interval of no less than 1 hour.
+
 Recommended to install submods in `game/Submods/`.
+
 The user can install only one update at a time, to apply the changes, they'll need to restart the game.
