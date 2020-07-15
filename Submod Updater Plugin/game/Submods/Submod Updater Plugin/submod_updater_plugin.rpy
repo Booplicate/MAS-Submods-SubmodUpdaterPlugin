@@ -20,6 +20,11 @@ init -980 python in sup_utils:
         repository_name="MAS-Submods-SubmodUpdaterPlugin"
     )
 
+# # # auto-update checks
+init -970 python in sup_utils:
+    mas_submod_utils.registerFunction("ch30_reset", SubmodUpdater.doLogicInThread, auto_error_handling=False)
+    mas_submod_utils.registerFunction("ch30_day", SubmodUpdater.doLogicInThread, auto_error_handling=False)
+
 # # # SUBMODUPDATER CLASS
 init -981 python in sup_utils:
     import store.mas_submod_utils as mas_submod_utils
@@ -87,6 +92,10 @@ init -981 python in sup_utils:
         # lock for threading stuff
         updateDownloadLock = threading.Lock()
 
+        # Renpy can suck this bar - I have working progress bar for windows
+        single_progress_bar = SUPProgressBar()
+        bulk_progress_bar = SUPProgressBar()
+
         # normalized path of the game directory
         BASE_DIRECTORY = renpy.config.basedir.replace("\\", "/")
 
@@ -98,6 +107,11 @@ init -981 python in sup_utils:
 
         # a map of submods which we will check for updates
         registered_updaters = dict()
+
+        # a list of updaters that were queued for updating
+        queued_updaters = list()
+        # a list of updaters resently finished updating
+        finished_updaters = list()
 
         def __init__(
             self,
@@ -144,11 +158,11 @@ init -981 python in sup_utils:
                 update_dir - directory where updates will be installed to
                     NOTE: if None, updates will be installed in the submod directory if one was specified
                     NOTE: if empty string, updates will be installed right in the base directory (the folder with DDLC.exe)
-                    (Defaut: None)
+                    (Default: None)
 
                 extraction_depth - extraction depth, depth of the recursion for the update extractor
                     See the __extract_files method for more info
-                    (Defaut: 1)
+                    (Default: 1)
 
                 attachment_id - id of the attachment on GitHub
                     (only if you have more than one attachment in releases, not counting source code)
@@ -261,20 +275,6 @@ init -981 python in sup_utils:
                 return self._json["update_package_url"]
             return None
 
-        @property
-        def is_updating(self):
-            """
-            Returns a bool whether we're updating this submod now
-            """
-            return self.__updating
-
-        @property
-        def has_updated(self):
-            """
-            Returns a bool whether we updated this submod
-            """
-            return self.__updated
-
         def toggleNotifs(self):
             """
             Toggles the should_notify property
@@ -292,6 +292,18 @@ init -981 python in sup_utils:
             Toggles the allow_updates property
             """
             self.allow_updates = not self.allow_updates
+
+        def isUpdating(self):
+            """
+            Returns a bool whether we're updating this submod now
+            """
+            return self.__updating
+
+        def hasUpdated(self):
+            """
+            Returns a bool whether we updated this submod
+            """
+            return self.__updated
 
         def __getFilePath(self):
             """
@@ -520,14 +532,19 @@ init -981 python in sup_utils:
 
             update_checker.start()
 
-        def hasUpdate(self, should_check=True):
+        def hasUpdate(self, should_check=True, ignore_if_updated=True, ignore_if_updating=True):
             """
-            Geneal way to check whether or not
-            there's an update for this submod
+            Geneal way to check if there's an update for this submod
 
             IN:
                 should_check - whether we send a request to GitHub (True),
                     or return False if we don't have the update data (False)
+                    (Default: True)
+
+                ignore_if_updated - whether or not skip this check if the submod was updated
+                    (Default: True)
+
+                ignore_if_updating - whether or not skip this check if the submod is being updated now
                     (Default: True)
 
             OUT:
@@ -535,8 +552,14 @@ init -981 python in sup_utils:
                 False otherwise
             """
             if (
-                self.__updating
-                or self.__updated
+                (
+                    self.__updating
+                    and ignore_if_updating
+                )
+                or (
+                    self.__updated
+                    and ignore_if_updated
+                )
             ):
                 return False
 
@@ -560,7 +583,7 @@ init -981 python in sup_utils:
                 update_dir - the directory the updater will extract this update into
                     NOTE: if None, the update will be installed in the submod directory
                     NOTE: if empty string, the update will be installed right in the base directory (the folder with DDLC.exe)
-                    (Defaut: None)
+                    (Default: None)
 
                 extraction_depth - extraction depth, check the __extract_files method for explanation
                     (Default: 1)
@@ -662,10 +685,21 @@ init -981 python in sup_utils:
                 except Exception as e:
                     self.__writeLog("Failed to delete temp files: {0}".format(path), e)
 
+            def __do_progress_bar_logic():
+                """
+                Does logic for updating the progress bar for bulk downloads
+                """
+                if self in self.queued_updaters:
+                    self.finished_updaters.append(self)
+                    bar_value = 1.0 / float(self.queued_updaters) * 100
+                    self.bulk_progress_bar.add_value(bar_value)
+
             # # # End of helper methods defination
 
             # only allow one update at a time 
             with self.updateDownloadLock:
+                # Reset the previous state
+                self.single_progress_bar.reset()
                 self.__updating = True
 
                 # # # Sanity checks
@@ -677,6 +711,8 @@ init -981 python in sup_utils:
 
                     self.__updating = False
 
+                    __do_progress_bar_logic()
+
                     return False
 
                 if (
@@ -686,6 +722,8 @@ init -981 python in sup_utils:
                     self.__writeLog("Failed to update. Missing update JSON data.")
 
                     self.__updating = False
+
+                    __do_progress_bar_logic()
 
                     return False
 
@@ -703,6 +741,8 @@ init -981 python in sup_utils:
 
                             self.__updating = False
 
+                            __do_progress_bar_logic()
+
                             return False
 
                         update_dir = self._submod_dir
@@ -710,11 +750,6 @@ init -981 python in sup_utils:
                     # Make it an absolute path if needed
                     if self.BASE_DIRECTORY not in update_dir:
                         update_dir = os.path.join(self.BASE_DIRECTORY, update_dir).replace("\\", "/")
-                        # update_dir = "{0}{1}{2}".format(
-                        #     self.BASE_DIRECTORY,
-                        #     "/",
-                        #     update_dir
-                        # )
 
                 # if temp_folder_name is None:
                 temp_folder_name = "temp_{0}_{1}".format(
@@ -723,22 +758,10 @@ init -981 python in sup_utils:
                 )
 
                 temp_files_dir = os.path.join(self.BASE_DIRECTORY, self._submod_dir, temp_folder_name).replace("\\", "/")
-                # temp_files_dir = "{0}{1}{2}{3}{4}".format(
-                #     self.BASE_DIRECTORY,
-                #     "/",
-                #     self._submod_dir,
-                #     "/",
-                #     temp_folder_name
-                # )
 
                 temp_file_name = "update.zip"
 
                 temp_file = os.path.join(temp_files_dir, temp_file_name).replace("\\", "/")
-                # temp_file = "{0}{1}{2}".format(
-                #     temp_files_dir,
-                #     "/",
-                #     temp_file_name
-                # )
 
                 # # # Check the paths
                 path_1 = __check_filepath(temp_files_dir)
@@ -747,6 +770,9 @@ init -981 python in sup_utils:
                 # abort if we weren't able to create the folders
                 if not path_1 or not path_2:
                     self.__updating = False
+
+                    __do_progress_bar_logic()
+
                     return False
 
                 update_url = self._json["update_package_url"]
@@ -765,6 +791,8 @@ init -981 python in sup_utils:
                     self.__writeLog("Failed to update. Failed to request update size.", e)
 
                     self.__updating = False
+
+                    __do_progress_bar_logic()
 
                     return False
 
@@ -796,6 +824,10 @@ init -981 python in sup_utils:
                             bytes_downloaded += len(cache_buffer)
                             update_file.write(cache_buffer)
 
+                            bar_value = float(len(cache_buffer)) / float(update_size) * 100
+                            self.single_progress_bar.add_value(bar_value)
+                            time.sleep(0.25)
+
                             if (
                                 bytes_downloaded == top_bracket
                                 and bytes_downloaded != update_size
@@ -813,6 +845,8 @@ init -981 python in sup_utils:
 
                     self.__updating = False
 
+                    __do_progress_bar_logic()
+
                     return False
 
                 try:
@@ -826,6 +860,8 @@ init -981 python in sup_utils:
                     __delete_update_files(temp_files_dir)
 
                     self.__updating = False
+
+                    __do_progress_bar_logic()
 
                     return False
 
@@ -861,6 +897,8 @@ init -981 python in sup_utils:
                 self.__updating = False
                 self.__updated = True
 
+                __do_progress_bar_logic()
+
                 return True
 
             return False
@@ -877,7 +915,7 @@ init -981 python in sup_utils:
                 update_dir - the directory the updater will extract this update into
                     NOTE: if None, the update will be installed in the submod directory
                     NOTE: if empty string, the update will be installed right in the base directory (with DDLC.exe)
-                    (Defaut: None)
+                    (Default: None)
 
                 extraction_depth - the extraction depth, check the main method for explanation
                     (Default: 1)
@@ -889,7 +927,7 @@ init -981 python in sup_utils:
 
             downloader.start()
 
-        def _checkDependencies(self):
+        def _checkConflicts(self):
             """
             Checks if some of other submods will have issues if we update this submod
             NOTE: doesn't actually forbid updating, only prompts the user
@@ -911,11 +949,11 @@ init -981 python in sup_utils:
                 """
                 return map(int, version.split('.'))
 
+            conflicting_submods = []
+
             # we shouldn't get here if we don't have the version number
             if self.latest_version is None:
-                return False
-
-            conflicting_submods = []
+                return conflicting_submods
 
             for submod in mas_submod_utils.submod_map.itervalues():
                 # so it doesn't check itself
@@ -937,9 +975,57 @@ init -981 python in sup_utils:
 
                             # we should prompt the user that this one might cause issues
                             if rv < 0:
-                                conflicting_submods.append((submod.name, max_version))
+                                conflicting_submods.append((submod.name, self._submod.name, max_version))
 
             return conflicting_submods
+
+        @classmethod
+        def updateSubmods(cls, *updaters):
+            """
+            Queue the given updaters for update
+            NOTE: updates only one submod at a time
+            NOTE: no guarantees which submod will be updated first
+            NOTE: this will use the default submod params:
+                update_dir and extraction_depth
+
+            IN:
+                updaters - updaters whose submods we'll update
+            """
+            # We should use the lock to modify the list
+            with cls.updateDownloadLock:
+                # Reset after the previous update
+                cls.queued_updaters = []
+                cls.finished_updaters = []
+                cls.bulk_progress_bar.reset()
+
+                for updater in updaters:
+                    cls.queued_updaters.append(updater)
+                    updater.downloadUpdateInThread(
+                        update_dir=updater._update_dir,
+                        extraction_depth=updater._extraction_depth
+                    )
+
+        @classmethod
+        def totalQueuedUpdaters(cls):
+            """
+            Returns the number of queued updaters
+            """
+            return len(cls.queued_updaters)
+
+        @classmethod
+        def totalFinishedUpdaters(cls):
+            """
+            Returns the number of finished updaters
+            """
+            return len(cls.finished_updaters)
+
+        @classmethod
+        def isBulkUpdating(cls):
+            """
+            Returns whether or not we have an ongoing bulk update
+            """
+            # in the end they should have equal length
+            return cls.totalFinishedUpdaters() < cls.totalQueuedUpdaters()
 
         @classmethod
         def getDirectoryFor(cls, submod_name, absolute=True):
@@ -975,7 +1061,21 @@ init -981 python in sup_utils:
             return cls.registered_updaters.get(submod_name, None)
 
         @classmethod
-        def _isUpdatingAny(cls):
+        def _getUpdaterForUpdatingSubmod(cls):
+            """
+            Returns the updater for the submod that is currently being updated
+
+            OUT:
+                SubmodUpdater object, or None if not found.
+            """
+            for updater in cls.registered_updaters.itervalues():
+                if updater.__updating:
+                    return updater
+
+            return None
+
+        @classmethod
+        def isUpdatingAny(cls):
             """
             Checks if we're updating a submod right now
 
@@ -983,11 +1083,7 @@ init -981 python in sup_utils:
                 True if have an ongoing update,
                 False otherwise
             """
-            for updater in cls.registered_updaters.itervalues():
-                if updater.__updating:
-                    return True
-
-            return False
+            return cls._getUpdaterForUpdatingSubmod() is not None
 
         @classmethod
         def hasUpdateFor(cls, submod_name, should_check=True):
@@ -1091,10 +1187,20 @@ init -981 python in sup_utils:
             checker.start()
 
         @classmethod
-        def getUpdatersForOutdatedSubmods(cls):
+        def getUpdatersForOutdatedSubmods(cls, ignore_if_updated=True, ignore_if_updating=False, ignore_if_cant_update=False):
             """
             Returns updater object for each outdated submod
             NOTE: does not check for updates itself
+
+            IN:
+                ignore_if_updated - if True we'll skip already updated submods
+                    (Default: True)
+
+                ignore_if_updating - if True we'll skip currently updating submods
+                    (Default: False)
+
+                ignore_if_cant_update - if True we'll skip submods that can't be updated in-game
+                    (Default: False)
 
             OUT:
                 list of updaters
@@ -1102,19 +1208,45 @@ init -981 python in sup_utils:
             return [
                 updater
                 for updater in cls.registered_updaters.itervalues()
-                if updater.hasUpdate(should_check=False)
+                if (
+                    updater.hasUpdate(
+                        should_check=False,
+                        ignore_if_updated=ignore_if_updated,
+                        ignore_if_updating=ignore_if_updating
+                    )
+                    and (
+                        updater.allow_updates
+                        or not ignore_if_cant_update
+                    )
+                )
             ]
 
         @classmethod
-        def hasOutdatedSubmods(cls):
+        def hasOutdatedSubmods(cls, ignore_if_updated=True, ignore_if_updating=False, ignore_if_cant_update=False):
             """
-            Returns a boolean whether or not the user has otudated submods
+            Returns a boolean whether or not the user has outdated submods
             NOTE: does not check for updates itself
+
+            IN:
+                ignore_if_updated - if True we'll skip already updated submods
+                    (Default: True)
+
+                ignore_if_updating - if True we'll skip currently updating submods
+                    (Default: False)
+
+                ignore_if_cant_update - if True we'll skip submods that can't be updated in-game
+                    (Default: False)
 
             OUT:
                 True if has, False if has not
             """
-            return bool(len(cls.getUpdatersForOutdatedSubmods()) > 0)
+            return len(
+                cls.getUpdatersForOutdatedSubmods(
+                    ignore_if_updated=ignore_if_updated,
+                    ignore_if_updating=ignore_if_updating,
+                    ignore_if_cant_update=ignore_if_cant_update
+                )
+            ) > 0
 
         @classmethod
         def getIcon(cls, submod_name):
@@ -1134,7 +1266,7 @@ init -981 python in sup_utils:
 
             general_str = "store.sup_utils.SubmodUpdater.getUpdater('{}')".format(submod_name)
 
-            is_updating_condition = general_str + ".is_updating"
+            is_updating_condition = general_str + ".isUpdating()"
             updating_img = "sup_indicator_update_downloading"
             is_update_available_condition = general_str + ".hasUpdate(should_check=False)"
             has_update_img = "sup_indicator_update_available"
@@ -1232,7 +1364,56 @@ init -981 python in sup_utils:
             except:
                 return False
 
-# # # END OF SUBMODUPDATER CLASS
+# # # END OF THE SUBMODUPDATER CLASS
+
+# # # SUPPROGRESSBAR CLASS
+# Early defination since we're using this in the SubmodUpdater class
+init -990 python in sup_utils:
+    from store import AnimatedValue
+
+    class SUPProgressBar(AnimatedValue):
+        """
+        Subclass of AnimatedValue which is a subclass of the BarValue class
+        Implements advanced animated bar
+        TODO:
+            subclass the Bar class, add a screen statement for it
+        """
+        def __init__(self, value=0, range=100, delay=0.25, old_value=None):
+            if old_value is None:
+                old_value = value
+
+            self.value = value
+            self.range = range
+            self.delay = delay
+            self.old_value = old_value
+            self.start_time = None
+
+            self.adjustment = None
+
+        def replaces(self, other):
+            return
+
+        def add_value(self, value):
+            if self.value + value > self.range:
+                value = self.range - self.value
+
+            elif self.value + value < 0:
+                value = 0 - self.value
+
+            if value == 0:
+                return
+
+            self.old_value = self.adjustment._value
+            self.value += value
+            self.start_time = None
+            renpy.restart_interaction()
+
+        def reset(self):
+            self.value = 0
+            self.old_value = 0
+            self.start_time = None
+
+# # # END OF THE SUPPROGRESSBAR CLASS
 
 # # # Icons for different update states
 image sup_indicator_update_downloading:
@@ -1262,97 +1443,39 @@ image sup_indicator_update_available:
 image sup_indicator_no_update = Solid("#00000000", xsize=20, ysize=20)
 
 # predefine these to save some performance
-image sup_indicator_updating_1 = Text("Updating a submod")
-image sup_indicator_updating_2 = Text("Updating a submod.")
-image sup_indicator_updating_3 = Text("Updating a submod..")
-image sup_indicator_updating_4 = Text("Updating a submod...")
+image sup_text_updating_1 = Text("Updating a submod   ", size=15)
+image sup_text_updating_2 = Text("Updating a submod.  ", size=15)
+image sup_text_updating_3 = Text("Updating a submod.. ", size=15)
+image sup_text_updating_4 = Text("Updating a submod...", size=15)
 
-image sup_indicator_updating:
+image sup_progress_bar_text:
     xanchor 0
     subpixel True
     block:
-        "sup_indicator_updating_1"
+        "sup_text_updating_1"
         pause 0.75
-        "sup_indicator_updating_2"
+        "sup_text_updating_2"
         pause 0.75
-        "sup_indicator_updating_3"
+        "sup_text_updating_3"
         pause 0.75
-        "sup_indicator_updating_4"
+        "sup_text_updating_4"
         pause 0.75
         repeat
 
-# # # Confirm screen
-#
-# IN:
-#    submod_updater - updater
-#
-screen sup_confirm_updating(submod_updater):
-    default conflicts = submod_updater._checkDependencies()
-    default total_conflicts = len(conflicts)
-
-    modal True
-
-    zorder 200
-
-    style_prefix "confirm"
-    add mas_getTimeFile("gui/overlay/confirm.png")
-
-    frame:
-        vbox:
-            align (0.5, 0.5)
-            spacing 30
-
-            label "Start updating [submod_updater.id] v[submod_updater._submod.version] to v[submod_updater.latest_version]?":
-                style "confirm_prompt"
-                xalign 0.5
-
-            if total_conflicts > 0:
-                viewport:
-                    ymaximum 200
-                    xmaximum 800
-                    xfill False
-                    yfill False
-                    mousewheel True
-                    scrollbars "vertical"
-
-                    vbox:
-                        spacing 10
-
-                        text "Warning:"
-
-                        for submod_name, max_version in conflicts:
-                            text "    - [submod_name] supports maximum v[max_version] of [submod_updater.id]"
-
-                        if total_conflicts > 1:
-                            text "Updating those submods to their newer versions might fix that issue."
-
-                        else:
-                            text "Updating that submod to its newer version might fix that issue."
-
-            hbox:
-                xalign 0.5
-                spacing 100
-
-                textbutton "Yes":
-                    action [
-                        Function(
-                            submod_updater.downloadUpdateInThread,
-                            update_dir=submod_updater._update_dir,
-                            extraction_depth=submod_updater._extraction_depth
-                        ),
-                        Hide("sup_confirm_updating"),
-                        Show("dialog", message="Please restart Monika After Story when you have finished installing updates.", ok_action=Hide("dialog"))
-                    ]
-                textbutton "No":
-                    action Hide("sup_confirm_updating")
-
-# # # Changelog screen
+# # # Update preview screen
 #
 # IN:
 #    title - update title
 #    body - update changelog
 #
-screen sup_update_changelog(title, body):
+screen sup_update_preview(title, body):
+    key "noshift_T" action NullAction()
+    key "noshift_t" action NullAction()
+    key "noshift_M" action NullAction()
+    key "noshift_m" action NullAction()
+    key "noshift_P" action NullAction()
+    key "noshift_p" action NullAction()
+
     modal True
 
     zorder 200
@@ -1381,7 +1504,315 @@ screen sup_update_changelog(title, body):
 
             textbutton "Close":
                 xalign 0.5
-                action Hide("sup_update_changelog")
+                action Hide("sup_update_preview")
+
+# # # Confirm screen
+#
+# IN:
+#    submod_updater - updater
+#
+screen sup_confirm_single_update(submod_updater):
+    key "noshift_T" action NullAction()
+    key "noshift_t" action NullAction()
+    key "noshift_M" action NullAction()
+    key "noshift_m" action NullAction()
+    key "noshift_P" action NullAction()
+    key "noshift_p" action NullAction()
+
+    default conflicts = submod_updater._checkConflicts()
+    default total_conflicts = len(conflicts)
+
+    modal True
+
+    zorder 200
+
+    style_prefix "confirm"
+    add mas_getTimeFile("gui/overlay/confirm.png")
+
+    frame:
+        vbox:
+            align (0.5, 0.5)
+            spacing 30
+
+            label "Start updating [submod_updater.id] v[submod_updater._submod.version] to v[submod_updater.latest_version]?":
+                style "confirm_prompt"
+                xalign 0.5
+
+            if total_conflicts > 0:
+                viewport:
+                    ymaximum 200
+                    xmaximum 800
+                    xfill False
+                    yfill False
+                    mousewheel True
+                    scrollbars "vertical"
+
+                    vbox:
+                        spacing 5
+
+                        text "Warning:"
+
+                        null height 5
+
+                        for conflicting_submod, this_submod, max_version in conflicts:
+                            text "    - [conflicting_submod] supports maximum v[max_version] of [this_submod]"
+
+                        null height 5
+
+                        if total_conflicts > 1:
+                            text "Updating those submods to their newer versions might fix that issue."
+
+                        else:
+                            text "Updating that submod to its newer version might fix that issue."
+
+            hbox:
+                xalign 0.5
+                spacing 100
+
+                textbutton "Yes":
+                    action [
+                        Function(
+                            submod_updater.downloadUpdateInThread,
+                            update_dir=submod_updater._update_dir,
+                            extraction_depth=submod_updater._extraction_depth
+                        ),
+                        Hide("sup_confirm_single_update"),
+                        Show("sup_single_update_screen")
+                    ]
+
+                textbutton "No":
+                    action Hide("sup_confirm_single_update")
+
+# # # Confirm screen
+#
+# IN:
+#    submod_updaters - updaters
+#
+screen sup_confirm_bulk_update(submod_updaters):
+    key "noshift_T" action NullAction()
+    key "noshift_t" action NullAction()
+    key "noshift_M" action NullAction()
+    key "noshift_m" action NullAction()
+    key "noshift_P" action NullAction()
+    key "noshift_p" action NullAction()
+
+    default conflicts = [conflict for submod_updater in submod_updaters for conflict in submod_updater._checkConflicts()]
+    default total_conflicts = len(conflicts)
+
+    modal True
+
+    zorder 200
+
+    style_prefix "confirm"
+    add mas_getTimeFile("gui/overlay/confirm.png")
+
+    frame:
+        vbox:
+            align (0.5, 0.5)
+            spacing 30
+
+            label "Start updating {b}all{/b} installed submods that can be updated?":
+                style "confirm_prompt"
+                xalign 0.5
+
+            if total_conflicts > 0:
+                viewport:
+                    ymaximum 200
+                    xmaximum 800
+                    xfill False
+                    yfill False
+                    mousewheel True
+                    scrollbars "vertical"
+
+                    vbox:
+                        spacing 5
+
+                        text "Warning:"
+
+                        null height 5
+
+                        for conflicting_submod, updating_submod, max_version in conflicts:
+                            text "    - [conflicting_submod] supports maximum v[max_version] of [updating_submod]"
+
+                        null height 5
+
+                        if total_conflicts > 1:
+                            text "Updating those submods to their newer versions might fix that issue."
+
+                        else:
+                            text "Updating that submod to its newer version might fix that issue."
+
+            hbox:
+                xalign 0.5
+                spacing 100
+
+                textbutton "Yes":
+                    action [
+                        Function(
+                            store.sup_utils.SubmodUpdater.updateSubmods,
+                            submod_updaters
+                        ),
+                        Hide("sup_confirm_bulk_update"),
+                        Show("sup_bulk_update_screen")
+                    ]
+
+                textbutton "No":
+                    action Hide("sup_confirm_bulk_update")
+
+# # # Update screen for single submod
+screen sup_single_update_screen():
+    # for safety
+    key "K_ESCAPE" action NullAction()
+    key "alt_K_F4" action NullAction()
+    key "noshift_T" action NullAction()
+    key "noshift_t" action NullAction()
+    key "noshift_M" action NullAction()
+    key "noshift_m" action NullAction()
+    key "noshift_P" action NullAction()
+    key "noshift_p" action NullAction()
+    # for usability
+    key "K_RETURN" action If(
+        (
+            not store.sup_utils.SubmodUpdater.isUpdatingAny()
+        ),
+        true=Hide("sup_single_update_screen"),
+        false=NullAction()
+    )
+
+    modal True
+
+    zorder 200
+
+    style_prefix "confirm"
+    add mas_getTimeFile("gui/overlay/confirm.png")
+
+    frame:
+        vbox:
+            align (0.5, 0.5)
+            xsize 440
+            spacing 10
+
+            if store.sup_utils.SubmodUpdater.isUpdatingAny():
+                bar:
+                    xalign 0.5
+                    xysize (400, 25)
+                    value store.sup_utils.SubmodUpdater.single_progress_bar
+                    left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + "/left_bar.png", 2, 2)
+                    right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + "/right_bar.png", 2, 2)
+                    right_gutter 1
+
+                add "sup_progress_bar_text":
+                    xalign 0.5
+                    xoffset 5
+                    ypos -35
+
+            else:
+                if store.sup_utils.SubmodUpdater.hasOutdatedSubmods():
+                    text "Please restart Monika After Story when you have finished installing updates.":
+                        xalign 0.5
+                        text_align 0.5
+
+                else:
+                    text "Please restart Monika After Story.":
+                        xalign 0.5
+                        text_align 0.5
+
+                    null height 15
+
+            textbutton "Ok":
+                xalign 0.5
+                sensitive not store.sup_utils.SubmodUpdater.isUpdatingAny()
+                action Hide("sup_single_update_screen")
+
+    timer 1.0:
+        repeat True
+        action Function(renpy.restart_interaction)
+
+# # # Update screen for bulk updating
+screen sup_bulk_update_screen():
+    # for safety
+    key "K_ESCAPE" action NullAction()
+    key "alt_K_F4" action NullAction()
+    key "noshift_T" action NullAction()
+    key "noshift_t" action NullAction()
+    key "noshift_M" action NullAction()
+    key "noshift_m" action NullAction()
+    key "noshift_P" action NullAction()
+    key "noshift_p" action NullAction()
+    # for usability
+    key "K_RETURN" action If(
+        (
+            not store.sup_utils.SubmodUpdater.isUpdatingAny()# TODO: potentially it should be safe to do only one of these checks
+            and not store.sup_utils.SubmodUpdater.isBulkUpdating()# and doing only isBulkUpdating would save some performance
+        ),
+        true=Hide("sup_bulk_update_screen"),
+        false=NullAction()
+    )
+
+    modal True
+
+    zorder 200
+
+    style_prefix "confirm"
+    add mas_getTimeFile("gui/overlay/confirm.png")
+
+    frame:
+        vbox:
+            align (0.5, 0.5)
+            xsize 440
+            spacing 10
+
+            if (
+                store.sup_utils.SubmodUpdater.isUpdatingAny()
+                or store.sup_utils.SubmodUpdater.isBulkUpdating()
+            ):
+                # total prrogression
+                bar:
+                    xalign 0.5
+                    xysize (400, 25)
+                    value store.sup_utils.SubmodUpdater.bulk_progress_bar# This's handled inside SubmodUpdater
+                    left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + "/left_bar.png", 2, 2)
+                    right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + "/right_bar.png", 2, 2)
+                    right_gutter 1
+
+                text "Progress: [store.sup_utils.SubmodUpdater.totalFinishedUpdaters()] / [store.sup_utils.SubmodUpdater.totalQueuedUpdaters()]":
+                    xalign 0.5
+                    text_align 0.5
+                    size 15
+                    ypos -35
+
+                # currently updating submod prrogression
+                bar:
+                    xalign 0.5
+                    xysize (400, 25)
+                    value store.sup_utils.SubmodUpdater.single_progress_bar# This's handled inside SubmodUpdater
+                    left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + "/left_bar.png", 2, 2)
+                    right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + "/right_bar.png", 2, 2)
+                    right_gutter 1
+
+                add "sup_progress_bar_text":
+                    xalign 0.5
+                    xoffset 5
+                    ypos -35
+
+            else:
+                text "Please restart Monika After Story.":
+                    xalign 0.5
+                    text_align 0.5
+
+                null height 83
+
+            textbutton "Ok":
+                xalign 0.5
+                sensitive (
+                    not store.sup_utils.SubmodUpdater.isUpdatingAny()
+                    and not store.sup_utils.SubmodUpdater.isBulkUpdating()
+                )
+                action Hide("sup_bulk_update_screen")
+
+    timer 1.0:
+        repeat True
+        action Function(renpy.restart_interaction)
 
 # # # Submod screen
 screen sup_setting_pane():
@@ -1398,7 +1829,7 @@ screen sup_setting_pane():
                 int
             """
             height = 0
-            limit = 160
+            limit = 180
             for item in items:
                 if item.should_notify:
                     height += 40
@@ -1409,10 +1840,10 @@ screen sup_setting_pane():
             return height if height <= limit else limit
 
     default submod_updaters = store.sup_utils.SubmodUpdater.getUpdatersForOutdatedSubmods()
-    default new_updates_found_text = "New updates found:" if len(submod_updaters) > 1 else "A new update found:"
-
-    # add update_icon:
-    #     pos (325, -102)
+    default total_submod_updaters = len(submod_updaters)
+    default updatable_submod_updaters = store.sup_utils.SubmodUpdater.getUpdatersForOutdatedSubmods(ignore_if_cant_update=True)
+    default total_updatable_submod_updaters = len(updatable_submod_updaters)
+    default new_updates_found_text = "New updates found!" if total_submod_updaters > 1 else "A new update found!"
 
     vbox:
         ypos 0
@@ -1421,16 +1852,29 @@ screen sup_setting_pane():
         yfill False
         style_prefix "check"
 
-        if (
-            store.sup_utils.SubmodUpdater.hasOutdatedSubmods()
-            and not store.sup_utils.SubmodUpdater._isUpdatingAny()
-        ):
+        if store.sup_utils.SubmodUpdater.hasOutdatedSubmods():
             vbox:
                 xmaximum 800
                 xfill True
                 yfill False
 
-                text "[new_updates_found_text]"
+                hbox:
+                    spacing 0
+
+                    text "[new_updates_found_text]"
+
+                    if total_updatable_submod_updaters > 1:
+                        textbutton "{b}Update all now!{/b}":
+                            pos (-20, 1)
+                            action ShowTransient("sup_confirm_bulk_update", submod_updaters=updatable_submod_updaters)
+
+                    elif (
+                        total_updatable_submod_updaters > 0
+                        and total_submod_updaters > 3
+                    ):
+                        textbutton "{b}Update all now!{/b}":
+                            pos (-20, 1)
+                            action ShowTransient("sup_confirm_bulk_update", submod_updaters=[updatable_submod_updaters])
 
                 hbox:
                     box_reverse True
@@ -1461,22 +1905,25 @@ screen sup_setting_pane():
                                         text "v[submod_updater.latest_version]"
 
                                     hbox:
-                                        xpos 20
+                                        xpos 25
                                         spacing 10
                                         xmaximum 780
 
                                         textbutton "What's new?":
                                             ypos 1
                                             action ShowTransient(
-                                                "sup_update_changelog",
+                                                "sup_update_preview",
                                                 title=submod_updater.update_name,
                                                 body=submod_updater.update_changelog
                                             )
 
-                                        if submod_updater.allow_updates:
+                                        if (
+                                            submod_updater.allow_updates
+                                            and not submod_updater.isUpdating()
+                                        ):
                                             textbutton "Update now!":
                                                 ypos 1
-                                                action ShowTransient("sup_confirm_updating", submod_updater=submod_updater)
+                                                action ShowTransient("sup_confirm_single_update", submod_updater=submod_updater)
 
                     bar:
                         style "classroom_vscrollbar"
@@ -1484,9 +1931,6 @@ screen sup_setting_pane():
                         ymaximum __getScrollBarHeight(submod_updaters)
                         yfill False
                         value YScrollValue("viewport")
-
-        elif store.sup_utils.SubmodUpdater._isUpdatingAny():
-            add "sup_indicator_updating"
 
 # # # Overrides
 init 100:

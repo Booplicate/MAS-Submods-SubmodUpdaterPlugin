@@ -55,6 +55,8 @@ Some methods of the `SubmodUpdater` class you can work with.
 - `_checkUpdate` is an alternative to the method above. It'll rerequest data from GitHub when appropriate. Usually there's no need in that if you have `auto_check` enabled.
 - `_checkUpdateInThread` runs `_checkUpdate` in a thread.
 - `toggleNotifs`, `toggleAutoChecking`, and `toggleUpdates` allows to easily toggle values of the corresponding properties of the updater.
+- `isUpdating` checks whether or not we're updating this submod now.
+- `hasUpdated` checks whether or not we updated this submod.
 - `downloadUpdateInThread` allows you to download and install updates. This does not check for an update before downloading, and therefore will do nothing if you've not checked it before (or it wasn't done automatically).
 - `getDirectory` returns the path to the submod directory.
 - `getDirectoryFor` (class method) checks `getDirectory` for the given submod.
@@ -65,10 +67,11 @@ Some methods of the `SubmodUpdater` class you can work with.
 
 Rarely used methods.
 - `_downloadUpdate` is what `downloadUpdateInThread` uses to download updates. Accepts the same args/kwargs.
-- `_checkDependencies` - checks whether it's safe to update the submod or not. Return list of tuples with conflicting submods and their max supported version.
+- `_checkConflicts` - checks if it's safe to update the submod. Return list of tuples with conflicting submod, submod itself, and its max supported version.
 - `getUpdatersForOutdatedSubmods` (class method) just what you think - it returns `SubmodUpdater` objects for each outdated submod.
 - `hasOutdatedSubmods` (class method) returns boolean whether or not we have outdated submods.
-- `_isUpdatingAny` (class method) returns boolean whether or not we're updating a submod.
+- `isUpdatingAny` (class method) returns boolean whether or not we're updating a submod.
+- `isBulkUpdating` (class method) Returns boolean whether or not we have an ongoing bulk update.
 - `_notify` (class method) notifies the user about all available updates at once (if the appropriate updater has the `should_notify` property set to `True`).
 - `getIcon` (class method) returns an appropriate icon depending on the state of a submod (has update/currently updating).
 
