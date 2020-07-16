@@ -85,6 +85,9 @@ init -981 python in sup_utils:
         # the interval between requests
         REQUESTS_INTERVAL = datetime.timedelta(hours=1)
 
+        # number or attempts to requests content size
+        REQUEST_ATTEMPS_LIMIT = 10
+
         # IO file chunks
         REQUEST_CHUNK = 5242880
         WRITING_CHUNK = 262144
@@ -167,6 +170,8 @@ init -981 python in sup_utils:
                 attachment_id - id of the attachment on GitHub
                     (only if you have more than one attachment in releases, not counting source code)
                     NOTE: if set to None, the updater will download the source files
+                        while it is supported by this util, it's not supported well by GitHub
+                        better use an attachment
                     (Default: 0)
             """
             if isinstance(submod, basestring):
@@ -776,16 +781,46 @@ init -981 python in sup_utils:
                     return False
 
                 update_url = self._json["update_package_url"]
-                update_request = urllib2.Request(
+
+                req_size_headers = dict(self.HEADERS)
+                req_size_headers.update({"Accept-Encoding": "identity"})
+
+                req_size_request = urllib2.Request(
                     url=update_url,
-                    headers=self.HEADERS
+                    headers=req_size_headers
                 )
+
+                request_attempts_left = self.REQUEST_ATTEMPS_LIMIT# I literally hate GitHub for not allowing me to get Content-Length
+                update_size = None
 
                 # # # Get update size
                 try:
-                    update_size = int(
-                        urllib2.urlopen(update_request, timeout=15).info().getheaders("Content-Length")[0]
-                    )
+                    while (
+                        update_size is None
+                        and request_attempts_left > 0
+                    ):
+                        cont_length_list = urllib2.urlopen(req_size_request, timeout=15).info().getheaders("Content-Length")
+
+                        if len(cont_length_list) > 0:
+                            update_size = int(cont_length_list[0])
+
+                        else:
+                            request_attempts_left -= 1
+                            req_size_request = urllib2.Request(
+                                url=update_url,
+                                headers=req_size_headers
+                            )
+                            time.sleep(2)
+
+                    # I give 10 attempts, if we fail, we fail. Blame GitHub.
+                    if update_size is None:
+                        self.__writeLog("Github failed to return update size. Try again later.")
+
+                        self.__updating = False
+
+                        __do_progress_bar_logic()
+
+                        return False
 
                 except Exception as e:
                     self.__writeLog("Failed to update. Failed to request update size.", e)
@@ -809,7 +844,10 @@ init -981 python in sup_utils:
                         )
                     }
                 )
-                update_request = urllib2.Request(url=update_url, headers=downloading_headers)
+                update_request = urllib2.Request(
+                    url=update_url,
+                    headers=downloading_headers
+                )
 
                 # # # Start updating
                 try:
@@ -980,7 +1018,7 @@ init -981 python in sup_utils:
             return conflicting_submods
 
         @classmethod
-        def updateSubmods(cls, *updaters):
+        def updateSubmods(cls, updaters):
             """
             Queue the given updaters for update
             NOTE: updates only one submod at a time
@@ -989,7 +1027,7 @@ init -981 python in sup_utils:
                 update_dir and extraction_depth
 
             IN:
-                updaters - updaters whose submods we'll update
+                updaters - list of updaters whose submods we'll update
             """
             # We should use the lock to modify the list
             with cls.updateDownloadLock:
@@ -1420,24 +1458,24 @@ image sup_indicator_update_downloading:
     store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + "/indicator_update_downloading.png"
     align (0.5, 0.5)
     ypos 1
-    alpha 0.0
+    # alpha 0.0
     zoom 1.1
     subpixel True
-    block:
-        ease 0.75 alpha 1.0
-        ease 0.75 alpha 0.1
-        repeat
+    # block:
+    #     ease 0.75 alpha 1.0
+    #     ease 0.75 alpha 0.1
+    #     repeat
 
 image sup_indicator_update_available:
     store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + "/indicator_update_available.png"
     align (0.5, 0.5)
-    alpha 0.0
+    # alpha 0.0
     zoom 1.2
     subpixel True
-    block:
-        ease 0.75 alpha 1.0
-        ease 0.75 alpha 0.1
-        repeat
+    # block:
+    #     ease 0.75 alpha 1.0
+    #     ease 0.75 alpha 0.1
+    #     repeat
 
 # basically a placeholder
 image sup_indicator_no_update = Solid("#00000000", xsize=20, ysize=20)
@@ -1475,6 +1513,8 @@ screen sup_update_preview(title, body):
     key "noshift_m" action NullAction()
     key "noshift_P" action NullAction()
     key "noshift_p" action NullAction()
+    key "noshift_E" action NullAction()
+    key "noshift_e" action NullAction()
 
     modal True
 
@@ -1518,6 +1558,8 @@ screen sup_confirm_single_update(submod_updater):
     key "noshift_m" action NullAction()
     key "noshift_P" action NullAction()
     key "noshift_p" action NullAction()
+    key "noshift_E" action NullAction()
+    key "noshift_e" action NullAction()
 
     default conflicts = submod_updater._checkConflicts()
     default total_conflicts = len(conflicts)
@@ -1595,6 +1637,8 @@ screen sup_confirm_bulk_update(submod_updaters):
     key "noshift_m" action NullAction()
     key "noshift_P" action NullAction()
     key "noshift_p" action NullAction()
+    key "noshift_E" action NullAction()
+    key "noshift_e" action NullAction()
 
     default conflicts = [conflict for submod_updater in submod_updaters for conflict in submod_updater._checkConflicts()]
     default total_conflicts = len(conflicts)
@@ -1670,6 +1714,8 @@ screen sup_single_update_screen():
     key "noshift_m" action NullAction()
     key "noshift_P" action NullAction()
     key "noshift_p" action NullAction()
+    key "noshift_E" action NullAction()
+    key "noshift_e" action NullAction()
     # for usability
     key "K_RETURN" action If(
         (
@@ -1739,6 +1785,8 @@ screen sup_bulk_update_screen():
     key "noshift_m" action NullAction()
     key "noshift_P" action NullAction()
     key "noshift_p" action NullAction()
+    key "noshift_E" action NullAction()
+    key "noshift_e" action NullAction()
     # for usability
     key "K_RETURN" action If(
         (
@@ -1815,30 +1863,30 @@ screen sup_bulk_update_screen():
         action Function(renpy.restart_interaction)
 
 # # # Submod screen
+init python in sup_utils:
+    # helper method for this screen
+    def _getScrollBarHeight(items):
+        """
+        Calcualtes height for the scrollbar
+        (from 33 to 99 pxs)
+
+        IN:
+            items - viewpoint items
+
+        OUT:
+            int
+        """
+        height = 0
+        limit = 140
+        for item in items:
+            height += 35
+
+            if item.should_notify:
+                height += 35
+
+        return height if height <= limit else limit
+
 screen sup_setting_pane():
-    python:
-        def __getScrollBarHeight(items):
-            """
-            Calcualtes height for the scrollbar
-            (from 33 to 99 pxs)
-
-            IN:
-                items - viewpoint items
-
-            OUT:
-                int
-            """
-            height = 0
-            limit = 180
-            for item in items:
-                if item.should_notify:
-                    height += 40
-
-                    if item.allow_updates:
-                        height += 20
-
-            return height if height <= limit else limit
-
     default submod_updaters = store.sup_utils.SubmodUpdater.getUpdatersForOutdatedSubmods()
     default total_submod_updaters = len(submod_updaters)
     default updatable_submod_updaters = store.sup_utils.SubmodUpdater.getUpdatersForOutdatedSubmods(ignore_if_cant_update=True)
@@ -1880,7 +1928,7 @@ screen sup_setting_pane():
                     box_reverse True
                     viewport:
                         id "viewport"
-                        ymaximum 160
+                        ymaximum 140
                         xmaximum 780
                         xfill True
                         yfill False
@@ -1928,7 +1976,7 @@ screen sup_setting_pane():
                     bar:
                         style "classroom_vscrollbar"
                         xalign 0.005
-                        ymaximum __getScrollBarHeight(submod_updaters)
+                        ymaximum store.sup_utils._getScrollBarHeight(submod_updaters)
                         yfill False
                         value YScrollValue("viewport")
 

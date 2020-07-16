@@ -45,7 +45,7 @@ There're currently 7 additional parameters you can use:
 - `submod_dir` - the **relative** file path to the directory of your submod. If `None` (default), the updater will try to locate your submod. But if it fails and you've not specified the path, the updater won't be able to download and install updates.
 - `update_dir` - directory where updates will be installed to. If `None` (default), the updater will set it to the submod directory, if empty string, updates will be installed in the base directory.
 - `extraction_depth` - depth of the recursion for the update extractor. Defaut `1` - updater will try to go one folder inside to unpack updates.
-- `attachment_id` - id of the attachment with updates on GitHub. If you attach only one file, it'd be `0`, if two, depending on the order it can be either `0` or `1`. And so on. Defaults to `0`. If `None`, the updater will download **the source files**.
+- `attachment_id` - id of the attachment with updates on GitHub. If you attach only one file, it'd be `0`, if two, depending on the order it can be either `0` or `1`. And so on. Defaults to `0`. If `None`, the updater will download **the source files**. Note that GitHub doesn't support distributing releases that way. It will be noticeably slower to download and sometimes may fail to download at all. In short: use attachments.
 
 There's no strict rule when you should define your updater, you can do it from init level `-980` upto `999`. But for consistency and stability, I'd suggest to do it as early as possible - `-980`.
 
