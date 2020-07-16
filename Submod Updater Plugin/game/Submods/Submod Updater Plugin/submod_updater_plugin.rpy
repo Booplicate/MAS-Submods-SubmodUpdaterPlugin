@@ -85,7 +85,8 @@ init -981 python in sup_utils:
         # the interval between requests
         REQUESTS_INTERVAL = datetime.timedelta(hours=1)
 
-        # number or attempts to requests content size
+        # number of attempts to requests content size
+        # before aborting the update
         REQUEST_ATTEMPS_LIMIT = 10
 
         # IO file chunks
@@ -1770,7 +1771,7 @@ screen sup_single_update_screen():
                 sensitive not store.sup_utils.SubmodUpdater.isUpdatingAny()
                 action Hide("sup_single_update_screen")
 
-    timer 1.0:
+    timer 0.5:
         repeat True
         action Function(renpy.restart_interaction)
 
@@ -1858,7 +1859,7 @@ screen sup_bulk_update_screen():
                 )
                 action Hide("sup_bulk_update_screen")
 
-    timer 1.0:
+    timer 0.5:
         repeat True
         action Function(renpy.restart_interaction)
 
@@ -1918,7 +1919,7 @@ screen sup_setting_pane():
 
                     elif (
                         total_updatable_submod_updaters > 0
-                        and total_submod_updaters > 3
+                        and total_submod_updaters > 2
                     ):
                         textbutton "{b}Update all now!{/b}":
                             pos (-20, 1)
