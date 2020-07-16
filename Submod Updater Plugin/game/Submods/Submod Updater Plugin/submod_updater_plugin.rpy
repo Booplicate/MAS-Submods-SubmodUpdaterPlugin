@@ -17,7 +17,8 @@ init -980 python in sup_utils:
     SubmodUpdater(
         submod="Submod Updater Plugin",
         user_name="Booplicate",
-        repository_name="MAS-Submods-SubmodUpdaterPlugin"
+        repository_name="MAS-Submods-SubmodUpdaterPlugin",
+        update_dir=""
     )
 
 # # # auto-update checks
@@ -1482,10 +1483,10 @@ image sup_indicator_update_available:
 image sup_indicator_no_update = Solid("#00000000", xsize=20, ysize=20)
 
 # predefine these to save some performance
-image sup_text_updating_1 = Text("Updating a submod   ", size=15)
-image sup_text_updating_2 = Text("Updating a submod.  ", size=15)
-image sup_text_updating_3 = Text("Updating a submod.. ", size=15)
-image sup_text_updating_4 = Text("Updating a submod...", size=15)
+image sup_text_updating_1 = Text("Updating the submod   ", size=15)
+image sup_text_updating_2 = Text("Updating the submod.  ", size=15)
+image sup_text_updating_3 = Text("Updating the submod.. ", size=15)
+image sup_text_updating_4 = Text("Updating the submod...", size=15)
 
 image sup_progress_bar_text:
     xanchor 0
