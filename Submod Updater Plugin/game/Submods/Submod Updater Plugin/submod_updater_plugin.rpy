@@ -698,7 +698,7 @@ init -981 python in sup_utils:
                 """
                 if self in self.queued_updaters:
                     self.finished_updaters.append(self)
-                    bar_value = 1.0 / float(self.queued_updaters) * 100
+                    bar_value = 1.0 / float(len(self.queued_updaters)) * 100
                     self.bulk_progress_bar.add_value(bar_value)
 
             # # # End of helper methods defination
