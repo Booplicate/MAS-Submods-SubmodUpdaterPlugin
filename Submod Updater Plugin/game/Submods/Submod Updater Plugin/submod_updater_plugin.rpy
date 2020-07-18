@@ -1,7 +1,7 @@
 
 # Register the submod
-init -990 python in mas_submod_utils:
-    Submod(
+init -990 python:
+    store.mas_submod_utils.Submod(
         author="Booplicate",
         name="Submod Updater Plugin",
         description=(
@@ -13,23 +13,16 @@ init -990 python in mas_submod_utils:
     )
 
 # Register the updater
-init -980 python in sup_utils:
-    SubmodUpdater(
+init -990 python:
+    store.sup_utils.SubmodUpdater(
         submod="Submod Updater Plugin",
         user_name="Booplicate",
         repository_name="MAS-Submods-SubmodUpdaterPlugin",
         update_dir=""
     )
 
-# # # auto-update checks
-init -970 python in sup_utils:
-    mas_submod_utils.registerFunction("ch30_reset", SubmodUpdater.doLogicInThread, auto_error_handling=False)
-    mas_submod_utils.registerFunction("ch30_day", SubmodUpdater.doLogicInThread, auto_error_handling=False)
-
 # # # SUBMODUPDATER CLASS
-init -981 python in sup_utils:
-    import store.mas_submod_utils as mas_submod_utils
-    import store.mas_utils as mas_utils
+init -991 python in sup_utils:
     import re
     import os
     import shutil
@@ -37,13 +30,19 @@ init -981 python in sup_utils:
     import time
     import urllib2
     import threading
+    from store import mas_submod_utils
+    from store import mas_utils
     from store import ConditionSwitch
     from json import loads as loadJSON
     from zipfile import ZipFile
     from subprocess import Popen as subprocOpen
     from webbrowser import open as openBrowser
 
-    SubmodError = mas_submod_utils.SubmodError
+    class SubmodUpdaterError(Exception):
+        def __init__(self, _msg):
+            self.msg = _msg
+        def __str__(self):
+            return self.msg
 
     class SubmodUpdater(object):
         """
@@ -185,7 +184,7 @@ init -981 python in sup_utils:
                 submod_obj = submod
 
             else:
-                raise SubmodError(
+                raise SubmodUpdaterError(
                     "\"{0}\" is not a string, nor a Submod object.".format(submod)
                 )
                 return
@@ -1172,7 +1171,7 @@ init -981 python in sup_utils:
             total = len(additional_lines)
 
             if total > 1:
-                main_line = "There're submod updates available:  {}"
+                main_line = "There are submod updates available:  {}"
 
             elif total == 1:
                 main_line = "There's a submod update available:  {}"
@@ -1406,9 +1405,14 @@ init -981 python in sup_utils:
 
 # # # END OF THE SUBMODUPDATER CLASS
 
+# # # auto-update checks
+init python in sup_utils:
+    mas_submod_utils.registerFunction("ch30_reset", SubmodUpdater.doLogicInThread, auto_error_handling=False)
+    mas_submod_utils.registerFunction("ch30_day", SubmodUpdater.doLogicInThread, auto_error_handling=False)
+
 # # # SUPPROGRESSBAR CLASS
 # Early defination since we're using this in the SubmodUpdater class
-init -990 python in sup_utils:
+init -992 python in sup_utils:
     from store import AnimatedValue
 
     class SUPProgressBar(AnimatedValue):

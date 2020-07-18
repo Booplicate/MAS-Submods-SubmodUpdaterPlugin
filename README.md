@@ -19,8 +19,8 @@ You're free to use this for making and supporting submods (modificaion) for [Mon
 To use the full power of the updater, you'll need to define your submod first. After your submod is registered in the submods map, you can define an updater. Keep in mind that the name you pass in for the updater must be the same you used when defined your `Submod` object. Example:
 ```python
 # Register the submod
-init -990 python in mas_submod_utils:
-    Submod(
+init -990 python:
+    store.mas_submod_utils.Submod(
         author="Your Name",
         name="Your Submod Name",
         description="A short description.",
@@ -29,12 +29,13 @@ init -990 python in mas_submod_utils:
     )
 
 # Register the updater
-init -980 python in sup_utils:
-    SubmodUpdater(
-        submod="Your Submod Name",
-        user_name="Your_GitHub_Login",
-        repository_name="Name_of_the_Repository_for_Your_Submod"
-    )
+init -990 python:
+    if store.mas_submod_utils.isSubmodInstalled("Submod Updater Plugin"):
+        store.sup_utils.SubmodUpdater(
+            submod="Your Submod Name",
+            user_name="Your_GitHub_Login",
+            repository_name="Name_of_the_Repository_for_Your_Submod"
+        )
 ```
 Alternatively, you can pass in the `Submod` object itself instead of its name. Whatever you feel would suit your needs!
 
@@ -47,7 +48,8 @@ There're currently 7 additional parameters you can use:
 - `extraction_depth` - depth of the recursion for the update extractor. Defaut `1` - updater will try to go one folder inside to unpack updates.
 - `attachment_id` - id of the attachment with updates on GitHub. If you attach only one file, it'd be `0`, if two, depending on the order it can be either `0` or `1`. And so on. Defaults to `0`. If `None`, the updater will download **the source files**. Note that GitHub doesn't support distributing releases that way. It will be noticeably slower to download and sometimes may fail to download at all. In short: use attachments.
 
-There's no strict rule when you should define your updater, you can do it from init level `-980` upto `999`. But for consistency and stability, I'd suggest to do it as early as possible - `-980`.
+Define your updater at init level `-990`, **after** you defined the submod.
+The `store.mas_submod_utils.isSubmodInstalled("Submod Updater Plugin")` check is optional, but it'd allow you to support both versions of your submod: with the updater and without it.
 
 ## API:
 Some methods of the `SubmodUpdater` class you can work with.
@@ -105,3 +107,6 @@ Requests to GitHub should be done with an interval of no less than 1 hour.
 Recommended to install submods in `game/Submods/`.
 
 The user can install only one update at a time, to apply the changes, they'll need to restart the game.
+
+## Dependencies:
+GitHub accepts only encrypted connections, using it requires [SSL](https://github.com/Booplicate/MAS-Submods-SSL). This sub-util is shipped with releases.
