@@ -417,10 +417,16 @@ init -991 python in sup_utils:
                 self.__writeLog("Failed to parse JSON data: missing the 'name' field.")
                 update_name = "Unknown"
 
+            else:
+                update_name.replace("[", "[[").replace("{", "{{")
+
             update_changelog = json_data.get("body", None)
             if update_changelog is None:
                 self.__writeLog("Failed to parse JSON data: missing the 'body' field.")
                 update_changelog = ""
+
+            else:
+                update_changelog.replace("[", "[[").replace("{", "{{")
 
             update_page_url = json_data.get("html_url", None)
             if update_page_url is None:
