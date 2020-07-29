@@ -3,10 +3,8 @@
 
 A util submod that makes updating other submods easier. The util can automatically check updates for installed (and [registered](https://github.com/Booplicate/MAS-Submods-SubmodUpdaterPlugin#usage)) submods, notify the user about those updates, and even download and install them.
 
-**You do not need this unless you're a developer, or you were asked to install this as a dependency for another submod.**
-
-## Permissions:
-You're free to use this for making and supporting submods (modificaion) for [Monika After Story](https://github.com/Monika-After-Story/MonikaModDev). You're also allowed to ship the releases of this util with those submods. I'd really appreciate if you leave a link to this repository and mention me as the author of this tool.
+Currently known submods that support this util:
+- [YouTube Music](https://github.com/Booplicate/MAS-Submods-YouTubeMusic)
 
 ## Installation:
 0. Make sure you're running the latest version of MAS.
@@ -16,6 +14,8 @@ You're free to use this for making and supporting submods (modificaion) for [Mon
 2. The packages should be installed into your `DDLC/` folder. Exactly this folder, you should have `DDLC.exe` there.
 
 ## Usage:
+**This part is for the developers that want add support for this util to their submods, the actual end users do not need to do any manipulations - just install this submod.**
+
 To use the full power of the updater, you'll need to define your submod first. After your submod is registered in the submods map, you can define an updater. Keep in mind that the name you pass in for the updater must be the same you used when defined your `Submod` object. Example:
 ```python
 # Register the submod
@@ -107,6 +107,3 @@ Requests to GitHub should be done with an interval of no less than 1 hour.
 Recommended to install submods in `game/Submods/`.
 
 The user can install only one update at a time, to apply the changes, they'll need to restart the game.
-
-## Dependencies:
-GitHub accepts only encrypted connections, using it requires [SSL](https://github.com/Booplicate/MAS-Submods-SSL). This sub-util is shipped with releases.
