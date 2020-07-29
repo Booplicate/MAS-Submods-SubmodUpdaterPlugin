@@ -1465,6 +1465,10 @@ init -992 python in sup_utils:
 
 # # # END OF THE SUPPROGRESSBAR CLASS
 
+init -999 python:
+    import os
+    os.environ["SSL_CERT_FILE"] = renpy.config.gamedir + "/python-packages/certifi/cacert.pem"
+
 # # # Icons for different update states
 image sup_indicator_update_downloading:
     store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + "/indicator_update_downloading.png"
