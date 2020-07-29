@@ -8,7 +8,7 @@ init -990 python:
             "A util submod that makes updating other submods easier. "
             "More information on the project's {a=https://github.com/Booplicate/MAS-Submods-SubmodUpdaterPlugin}{i}{u}GitHub{/u}{/i}{/a}."
         ),
-        version="1.0",
+        version="1.1",
         settings_pane="sup_setting_pane"
     )
 
