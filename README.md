@@ -9,7 +9,7 @@ Currently known submods that support this util:
 ## Installation:
 0. Make sure you're running the latest version of MAS.
 
-1. Download the latest release of the submod from [the releases page](https://github.com/Booplicate/MAS-Submods-SubmodUpdaterPlugin/releases).
+1. Download [the latest release](https://github.com/Booplicate/MAS-Submods-SubmodUpdaterPlugin/releases/latest) of the submod.
 
 2. The packages should be installed into your `DDLC/` folder. Exactly this folder, you should have `DDLC.exe` there.
 
