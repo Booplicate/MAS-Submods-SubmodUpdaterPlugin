@@ -102,6 +102,11 @@ init -991 python in sup_utils:
 
         # normalized path of the game directory
         BASE_DIRECTORY = renpy.config.basedir.replace("\\", "/")
+        # img paths constants
+        INDICATOR_UPDATE_DOWNLOADING = "/indicator_update_downloading.png"
+        INDICATOR_UPDATE_AVAILABLE = "/indicator_update_available.png"
+        LEFT_BAR = "/left_bar.png"
+        RIGHT_BAR = "/right_bar.png"
 
         FOLDER_NAME_PATTERN = re.compile(r"[^a-zA-Z0-9_]")
 
@@ -128,7 +133,8 @@ init -991 python in sup_utils:
             submod_dir=None,
             update_dir=None,
             extraction_depth=1,
-            attachment_id=0
+            attachment_id=0,
+            tag_formatter=None
         ):
             """
             Constructor
@@ -174,6 +180,10 @@ init -991 python in sup_utils:
                         while it is supported by this util, it's not supported well by GitHub
                         better use an attachment
                     (Default: 0)
+
+                tag_formatter = if not None, assuming it's a function that accepts version tag from github as a string, formats it in a way,
+                    and returns a new formatted tag as a string. If None, no formatting applies on version tags
+                    (Default: None)
             """
             if isinstance(submod, basestring):
                 submod_name = submod
@@ -208,6 +218,7 @@ init -991 python in sup_utils:
             self._update_dir = update_dir
             self._extraction_depth = extraction_depth
             self.__attachment_id = attachment_id
+            self.__tag_formatter = tag_formatter
 
             self.__json_request = self.__buildJSONRequest()
             self._json = None
@@ -411,6 +422,14 @@ init -991 python in sup_utils:
             if latest_version is None:
                 self.__writeLog("Failed to parse JSON data: missing the 'tag_name' field.")
                 latest_version = self._submod.version
+
+            elif self.__tag_formatter is not None:
+                try:
+                    latest_version = self.__tag_formatter(latest_version)
+
+                except Exception as e:
+                    self.__writeLog("Failed to format version tag: {0}".format(e))
+                    latest_version = self._submod.version
 
             update_name = json_data.get("name", None)
             if update_name is None:
@@ -1471,7 +1490,7 @@ init -999 python:
 
 # # # Icons for different update states
 image sup_indicator_update_downloading:
-    store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + "/indicator_update_downloading.png"
+    store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.INDICATOR_UPDATE_DOWNLOADING
     align (0.5, 0.5)
     ypos 1
     # alpha 0.0
@@ -1483,7 +1502,7 @@ image sup_indicator_update_downloading:
     #     repeat
 
 image sup_indicator_update_available:
-    store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + "/indicator_update_available.png"
+    store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.INDICATOR_UPDATE_AVAILABLE
     align (0.5, 0.5)
     # alpha 0.0
     zoom 1.2
@@ -1759,8 +1778,8 @@ screen sup_single_update_screen():
                     xalign 0.5
                     xysize (400, 25)
                     value store.sup_utils.SubmodUpdater.single_progress_bar
-                    left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + "/left_bar.png", 2, 2)
-                    right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + "/right_bar.png", 2, 2)
+                    left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.LEFT_BAR, 2, 2)
+                    right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.RIGHT_BAR, 2, 2)
                     right_gutter 1
 
                 add "sup_progress_bar_text":
@@ -1835,8 +1854,8 @@ screen sup_bulk_update_screen():
                     xalign 0.5
                     xysize (400, 25)
                     value store.sup_utils.SubmodUpdater.bulk_progress_bar# This's handled inside SubmodUpdater
-                    left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + "/left_bar.png", 2, 2)
-                    right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + "/right_bar.png", 2, 2)
+                    left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.LEFT_BAR, 2, 2)
+                    right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.RIGHT_BAR, 2, 2)
                     right_gutter 1
 
                 text "Progress: [store.sup_utils.SubmodUpdater.totalFinishedUpdaters()] / [store.sup_utils.SubmodUpdater.totalQueuedUpdaters()]":
@@ -1850,8 +1869,8 @@ screen sup_bulk_update_screen():
                     xalign 0.5
                     xysize (400, 25)
                     value store.sup_utils.SubmodUpdater.single_progress_bar# This's handled inside SubmodUpdater
-                    left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + "/left_bar.png", 2, 2)
-                    right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + "/right_bar.png", 2, 2)
+                    left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.LEFT_BAR, 2, 2)
+                    right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.RIGHT_BAR, 2, 2)
                     right_gutter 1
 
                 add "sup_progress_bar_text":
