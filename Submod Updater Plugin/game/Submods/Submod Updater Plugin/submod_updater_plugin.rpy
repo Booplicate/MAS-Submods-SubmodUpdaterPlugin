@@ -21,7 +21,12 @@ init -990 python:
         update_dir=""
     )
 
-# # # SUBMODUPDATER CLASS
+# Add our certifs
+init -999 python:
+    import os
+    os.environ["SSL_CERT_FILE"] = renpy.config.gamedir + "/python-packages/certifi/cacert.pem"
+
+# Main code
 init -991 python in sup_utils:
     import re
     import os
@@ -33,17 +38,86 @@ init -991 python in sup_utils:
     from store import mas_submod_utils
     from store import mas_utils
     from store import ConditionSwitch
+    from store import AnimatedValue
     from json import loads as loadJSON
     from zipfile import ZipFile
     from subprocess import Popen as subprocOpen
     from webbrowser import open as openBrowser
 
+    def writeLog(msg, e=None, is_error=True):
+        """
+        Writes exceptions in logs
+
+        IN:
+            msg - the message to write
+            e - the exception to log
+                (Default: None)
+            is_error - whether or not this logs an error
+                (Default: True)
+        """
+        message_type = " ERROR" if is_error else " REPORT"
+        formatted_e = " Exception: {0}".format(e) if e is not None else ""
+        _text = "[SUBMOD UPDATER PLUGIN{0}]: {1}{2}\n".format(message_type, msg, formatted_e)
+
+        mas_utils.writelog(_text)
+
+    # # # SUPPROGRESSBAR CLASS
+    class SUPProgressBar(AnimatedValue):
+        """
+        Subclass of AnimatedValue which is a subclass of the BarValue class
+        Implements advanced animated bar
+        TODO:
+            subclass the Bar class, add a screen statement for it
+        """
+        def __init__(self, value=0, range=100, delay=0.25, old_value=None):
+            if old_value is None:
+                old_value = value
+
+            self.value = value
+            self.range = range
+            self.delay = delay
+            self.old_value = old_value
+            self.start_time = None
+
+            self.adjustment = None
+
+        def replaces(self, other):
+            return
+
+        def add_value(self, value):
+            if self.value + value > self.range:
+                value = self.range - self.value
+
+            elif self.value + value < 0:
+                value = 0 - self.value
+
+            if value == 0:
+                return
+
+            self.old_value = self.adjustment._value
+            self.value += value
+            self.start_time = None
+            # renpy.restart_interaction()
+
+        def reset(self):
+            self.value = 0
+            self.old_value = 0
+            self.start_time = None
+
+    # # # END OF THE SUPPROGRESSBAR CLASS
+
     class SubmodUpdaterError(Exception):
-        def __init__(self, _msg):
-            self.msg = _msg
+        """
+        Custom exception for Submod Updater Plugin
+        """
+        def __init__(self, msg, e=None):
+            self.msg = msg
+            self.e = e
+            writeLog(self.msg, e=e)
         def __str__(self):
             return self.msg
 
+    # # # SUBMODUPDATER CLASS
     class SubmodUpdater(object):
         """
         Submod Updater
@@ -61,6 +135,7 @@ init -991 python in sup_utils:
                 json - json data about submod from GitHub
                 last_update_check - datetime.datetime the last time we checked for update
                 update_available - whether or not we have an update available
+                update_exception - the exception that occurred during updating with this updater (if any)
 
             private:
                 user_name - the author's user name on GitHub
@@ -88,6 +163,8 @@ init -991 python in sup_utils:
         # number of attempts to requests content size
         # before aborting the update
         REQUEST_ATTEMPS_LIMIT = 10
+        # time in seconds before we will give up trying to connect
+        TIMEOUT = 15
 
         # IO file chunks
         REQUEST_CHUNK = 5242880
@@ -182,7 +259,7 @@ init -991 python in sup_utils:
                     (Default: 0)
 
                 tag_formatter = if not None, assuming it's a function that accepts version tag from github as a string, formats it in a way,
-                    and returns a new formatted tag as a string. If None, no formatting applies on version tags
+                    and returns a new formatted tag as a string. Exceptions are auto-handled. If None, no formatting applies on version tags
                     (Default: None)
             """
             if isinstance(submod, basestring):
@@ -193,18 +270,21 @@ init -991 python in sup_utils:
                 submod_name = submod.name
                 submod_obj = submod
 
+            # otherwise raise because this's critical
             else:
                 raise SubmodUpdaterError(
                     "\"{0}\" is not a string, nor a Submod object.".format(submod)
                 )
                 return
 
+            # ignore if the submod doesn't exist
             if submod_obj is None:
-                self.__writeLog("Submod '{0}' had not been registered in MAS Submods Framwork. Ignoring.".format(submod_name))
+                SubmodUpdaterError("Submod '{0}' had not been registered in MAS Submods Framwork. Ignoring.".format(submod_name))
                 return
 
+            # ignore dupes
             if submod_name in self.registered_updaters:
-                self.__writeLog("Submod '{0}' had already been registered in Submod Updater Plugin. Ignoring.".format(submod_name))
+                SubmodUpdaterError("Submod '{0}' had already been registered in Submod Updater Plugin. Ignoring.".format(submod_name))
                 return
 
             self.id = submod_name
@@ -226,6 +306,7 @@ init -991 python in sup_utils:
             self._update_available = None
             self.__updated = False
             self.__updating = False
+            self.update_exception = None
 
             self.__updateCheckLock = threading.Lock()
             # self.__updateAvailablePropLock = threading.Lock()
@@ -365,20 +446,20 @@ init -991 python in sup_utils:
             try:
                 response = urllib2.urlopen(
                     self.__json_request,
-                    timeout=15
+                    timeout=self.TIMEOUT
                 )
 
             except urllib2.HTTPError as e:
                 if e.code == self.RATE_LIMIT_CODE:
-                    self.__writeLog("Too many requests. Try again later.", e)
+                    SubmodUpdaterError("Too many requests. Try again later.", e)
 
                 else:
-                    self.__writeLog("Failed to request JSON data.", e)
+                    SubmodUpdaterError("Failed to request JSON data.", e)
 
                 return None
 
             except Exception as e:
-                self.__writeLog("Failed to request JSON data.", e)
+                SubmodUpdaterError("Failed to request JSON data.", e)
                 return None
 
             if (
@@ -391,7 +472,7 @@ init -991 python in sup_utils:
                     json_data = loadJSON(raw_data)
 
                 except Exception as e:
-                    self.__writeLog("Failed to load JSON data.", e)
+                    SubmodUpdaterError("Failed to load JSON data.", e)
                     return None
 
                 return json_data
@@ -420,7 +501,7 @@ init -991 python in sup_utils:
 
             latest_version = json_data.get("tag_name", None)
             if latest_version is None:
-                self.__writeLog("Failed to parse JSON data: missing the 'tag_name' field.")
+                SubmodUpdaterError("Failed to parse JSON data: missing the 'tag_name' field.")
                 latest_version = self._submod.version
 
             elif self.__tag_formatter is not None:
@@ -428,12 +509,12 @@ init -991 python in sup_utils:
                     latest_version = self.__tag_formatter(latest_version)
 
                 except Exception as e:
-                    self.__writeLog("Failed to format version tag: {0}".format(e))
+                    SubmodUpdaterError("Failed to format version tag: {0}".format(e))
                     latest_version = self._submod.version
 
             update_name = json_data.get("name", None)
             if update_name is None:
-                self.__writeLog("Failed to parse JSON data: missing the 'name' field.")
+                SubmodUpdaterError("Failed to parse JSON data: missing the 'name' field.")
                 update_name = "Unknown"
 
             else:
@@ -441,7 +522,7 @@ init -991 python in sup_utils:
 
             update_changelog = json_data.get("body", None)
             if update_changelog is None:
-                self.__writeLog("Failed to parse JSON data: missing the 'body' field.")
+                SubmodUpdaterError("Failed to parse JSON data: missing the 'body' field.")
                 update_changelog = ""
 
             else:
@@ -449,7 +530,7 @@ init -991 python in sup_utils:
 
             update_page_url = json_data.get("html_url", None)
             if update_page_url is None:
-                self.__writeLog("Failed to parse JSON data: missing the 'html_url' field.")
+                SubmodUpdaterError("Failed to parse JSON data: missing the 'html_url' field.")
 
             update_package_url = None
             if self.__attachment_id is not None:
@@ -460,16 +541,16 @@ init -991 python in sup_utils:
                         update_package_url = assets[self.__attachment_id].get("browser_download_url", None)
 
                     except IndexError:
-                        self.__writeLog("Failed to parse JSON data: attachment with id '{0}' doesn't exist.".format(self.__attachment_id))
+                        SubmodUpdaterError("Failed to parse JSON data: attachment with id '{0}' doesn't exist.".format(self.__attachment_id))
 
                 else:
-                    self.__writeLog("Failed to parse JSON data: missing the 'assets' field.")
+                    SubmodUpdaterError("Failed to parse JSON data: missing the 'assets' field.")
 
             else:
                 update_package_url = json_data.get("zipball_url", None)
 
                 if update_package_url is None:
-                    self.__writeLog("Failed to parse JSON data: missing the 'zipball_url' field.")
+                    SubmodUpdaterError("Failed to parse JSON data: missing the 'zipball_url' field.")
 
             return {
                 "latest_version": latest_version,
@@ -493,7 +574,10 @@ init -991 python in sup_utils:
             path = None
             if self._submod_dir is not None:
                 if absolute:
-                    path = os.path.join(self.BASE_DIRECTORY, self._submod_dir).replace("\\", "/")
+                    path = os.path.join(
+                        self.BASE_DIRECTORY,
+                        self._submod_dir.lstrip("/")# strip just in case, because join doesn't work if there's `/` at the beggining of the path
+                    ).replace("\\", "/")
 
                 else:
                     path = self._submod_dir
@@ -638,7 +722,7 @@ init -991 python in sup_utils:
                     return True
 
                 except Exception as e:
-                    self.__writeLog("Failed to check/create folders.", e)
+                    self.update_exception = SubmodUpdaterError("Failed to check/create folders.", e)
                     return False
 
             def __extract_files(srs, dst, depth=0):
@@ -658,19 +742,23 @@ init -991 python in sup_utils:
 
                 IN:
                     srs - the folder which we'll extract files from
-                    new_path - the destination
+                    dst - the destination
                     depth - depth of the recursion
 
                 OUT:
                     list of exceptions (it can be empty)
                 """
+                # list of exceptions we get during this call
                 exceptions = []
+                # set the next depth
+                new_depth = depth - 1
+
                 if os.path.isdir(srs):
                     for item in os.listdir(srs):
                         new_srs = os.path.join(srs, item).replace("\\", "/")
                         new_dst = os.path.join(dst, item).replace("\\", "/")
-                        new_depth = depth - 1
 
+                        # should we go deeper?
                         if (
                             depth > 0
                             and os.path.isdir(new_srs)
@@ -678,11 +766,14 @@ init -991 python in sup_utils:
                             rv = __extract_files(new_srs, dst, new_depth)
                             exceptions += rv
 
+                        # or just extract as is
                         else:
+                            # the dir already exists, have to use recursion
                             if os.path.isdir(new_dst):
                                 rv = __extract_files(new_srs, new_dst, 0)
                                 exceptions += rv
 
+                            # the file exists, have to delete it first
                             elif os.path.isfile(new_dst):
                                 try:
                                     os.remove(new_dst)
@@ -691,6 +782,7 @@ init -991 python in sup_utils:
                                 except Exception as e:
                                     exceptions.append(str(e))
 
+                            # simply move it
                             else:
                                 try:
                                     shutil.move(new_srs, dst)
@@ -713,8 +805,9 @@ init -991 python in sup_utils:
 
                     elif os.path.isfile(path):
                         os.remove(path)
+
                 except Exception as e:
-                    self.__writeLog("Failed to delete temp files: {0}".format(path), e)
+                    self.update_exception = SubmodUpdaterError("Failed to delete temp files: {0}".format(path), e)
 
             def __do_progress_bar_logic():
                 """
@@ -731,6 +824,9 @@ init -991 python in sup_utils:
             with self.updateDownloadLock:
                 # Reset the previous state
                 self.single_progress_bar.reset()
+                # Reset the previous exception
+                self.update_exception = None
+                # Mark as updating
                 self.__updating = True
 
                 # # # Sanity checks
@@ -738,7 +834,7 @@ init -991 python in sup_utils:
                     self.__updated
                     or not self._update_available
                 ):
-                    self.__writeLog("Aborting update. No new updates for '{0}' found.".format(self.id))
+                    self.update_exception = SubmodUpdaterError("Aborting update. No new updates for '{0}' found.".format(self.id))
 
                     self.__updating = False
 
@@ -750,7 +846,7 @@ init -991 python in sup_utils:
                     self._json is None
                     or self._json["update_package_url"] is None
                 ):
-                    self.__writeLog("Failed to update. Missing update JSON data.")
+                    self.update_exception = SubmodUpdaterError("Missing update JSON data.")
 
                     self.__updating = False
 
@@ -768,7 +864,7 @@ init -991 python in sup_utils:
                     # If we don't know the folder yet, try to get the one where we have the submod in
                     if update_dir is None:
                         if not self._submod_dir:
-                            self.__writeLog("Failed to update. Couldn't locate the submod directory.")
+                            self.update_exception = SubmodUpdaterError("Couldn't locate the submod directory.")
 
                             self.__updating = False
 
@@ -780,7 +876,10 @@ init -991 python in sup_utils:
 
                     # Make it an absolute path if needed
                     if self.BASE_DIRECTORY not in update_dir:
-                        update_dir = os.path.join(self.BASE_DIRECTORY, update_dir).replace("\\", "/")
+                        update_dir = os.path.join(
+                            self.BASE_DIRECTORY,
+                            update_dir.lstrip("/")# strip just in case, because join doesn't work if there's `/` at the beggining of the path
+                        ).replace("\\", "/")
 
                 # if temp_folder_name is None:
                 temp_folder_name = "temp_{0}_{1}".format(
@@ -788,7 +887,11 @@ init -991 python in sup_utils:
                     int(time.time())
                 )
 
-                temp_files_dir = os.path.join(self.BASE_DIRECTORY, self._submod_dir, temp_folder_name).replace("\\", "/")
+                temp_files_dir = os.path.join(
+                    self.BASE_DIRECTORY,
+                    self._submod_dir.lstrip("/"),
+                    temp_folder_name
+                ).replace("\\", "/")
 
                 temp_file_name = "update.zip"
 
@@ -800,6 +903,10 @@ init -991 python in sup_utils:
 
                 # abort if we weren't able to create the folders
                 if not path_1 or not path_2:
+                    self.update_exception = SubmodUpdaterError("Failed to create temp folders for update.")
+
+                    __delete_update_files(temp_files_dir)
+
                     self.__updating = False
 
                     __do_progress_bar_logic()
@@ -825,7 +932,7 @@ init -991 python in sup_utils:
                         update_size is None
                         and request_attempts_left > 0
                     ):
-                        cont_length_list = urllib2.urlopen(req_size_request, timeout=15).info().getheaders("Content-Length")
+                        cont_length_list = urllib2.urlopen(req_size_request, timeout=self.TIMEOUT).info().getheaders("Content-Length")
 
                         if len(cont_length_list) > 0:
                             update_size = int(cont_length_list[0])
@@ -836,11 +943,14 @@ init -991 python in sup_utils:
                                 url=update_url,
                                 headers=req_size_headers
                             )
-                            time.sleep(2)
+                            if request_attempts_left > 0:
+                                time.sleep(1)
 
                     # I give 10 attempts, if we fail, we fail. Blame GitHub.
                     if update_size is None:
-                        self.__writeLog("Github failed to return update size. Try again later.")
+                        self.update_exception = SubmodUpdaterError("Github failed to return update size. Try again later.")
+
+                        __delete_update_files(temp_files_dir)
 
                         self.__updating = False
 
@@ -849,7 +959,9 @@ init -991 python in sup_utils:
                         return False
 
                 except Exception as e:
-                    self.__writeLog("Failed to update. Failed to request update size.", e)
+                    self.update_exception = SubmodUpdaterError("Failed to request update size.", e)
+
+                    __delete_update_files(temp_files_dir)
 
                     self.__updating = False
 
@@ -878,7 +990,7 @@ init -991 python in sup_utils:
                 # # # Start updating
                 try:
                     with open(temp_file, "wb") as update_file:
-                        response = urllib2.urlopen(update_request, timeout=15)
+                        response = urllib2.urlopen(update_request, timeout=self.TIMEOUT)
                         while True:
                             cache_buffer = response.read(self.WRITING_CHUNK)
 
@@ -900,10 +1012,10 @@ init -991 python in sup_utils:
                                 top_bracket += self.REQUEST_CHUNK
                                 downloading_headers["Range"] = "bytes={0}-{1}".format(bottom_bracket, top_bracket)
                                 update_request = urllib2.Request(url=update_url, headers=downloading_headers)
-                                response = urllib2.urlopen(update_request, timeout=15)
+                                response = urllib2.urlopen(update_request, timeout=self.TIMEOUT)
 
                 except Exception as e:
-                    self.__writeLog("Failed to download update.", e)
+                    self.update_exception = SubmodUpdaterError("Failed to download update.", e)
 
                     __delete_update_files(temp_files_dir)
 
@@ -913,13 +1025,14 @@ init -991 python in sup_utils:
 
                     return False
 
+                # # # Extracting update
                 try:
                     # unzip :S
                     with ZipFile(temp_file, "r") as update_file:
                         update_file.extractall(temp_files_dir)
 
                 except Exception as e:
-                    self.__writeLog("Failed to extract update.", e)
+                    self.update_exception = SubmodUpdaterError("Failed to extract update.", e)
 
                     __delete_update_files(temp_files_dir)
 
@@ -939,7 +1052,7 @@ init -991 python in sup_utils:
                 # even if we fail here, it's too late to abort now
                 # but we can log exceptions
                 if exceptions:
-                    self.__writeLog("Failed to move update files. Exceptions:\n" + "\n".join(exceptions))
+                    SubmodUpdaterError("Failed to move update files. Exceptions:\n" + "\n".join(exceptions))
 
                     # __delete_update_files(temp_files_dir)
 
@@ -950,7 +1063,8 @@ init -991 python in sup_utils:
                 # delete temp folders
                 __delete_update_files(temp_files_dir)
 
-                self.__writeLog(
+                # log that we updated this submod
+                writeLog(
                     "Downloaded and installed the {0} update for '{1}'.".format(
                         self._json["latest_version"],
                         self.id
@@ -958,6 +1072,8 @@ init -991 python in sup_utils:
                     is_error=False
                 )
 
+                # (Re-)set some status vars
+                self.update_exception = None
                 self.__updating = False
                 self.__updated = True
 
@@ -988,7 +1104,6 @@ init -991 python in sup_utils:
                 target=self._downloadUpdate,
                 kwargs=dict(update_dir=update_dir, extraction_depth=extraction_depth)
             )
-
             downloader.start()
 
         def _checkConflicts(self):
@@ -1247,7 +1362,7 @@ init -991 python in sup_utils:
                 target=cls._doLogic,
                 args=(check_updates, notify)
             )
-
+            checker.daemon = True
             checker.start()
 
         @classmethod
@@ -1347,27 +1462,6 @@ init -991 python in sup_utils:
             )
 
         @staticmethod
-        def __writeLog(msg, e=None, is_error=True):
-            """
-            Writes exceptions in logs
-
-            IN:
-                msg - the message to write
-                e - the exception to log
-                    (Default: None)
-                is_error - whether or not this logs an error
-                    (Default: True)
-            """
-            message_type = " ERROR" if is_error else " REPORT"
-            if e is None:
-                _text = "[SUBMOD UPDATER PLUGIN{0}]: {1}\n".format(message_type, msg)
-
-            else:
-                _text = "[SUBMOD UPDATER PLUGIN{0}]: {1} Exception: {2}\n".format(message_type, msg, e)
-
-            mas_utils.writelog(_text)
-
-        @staticmethod
         def openURL(url):
             """
             Tries to open a url in the default browser
@@ -1430,87 +1524,31 @@ init -991 python in sup_utils:
 
 # # # END OF THE SUBMODUPDATER CLASS
 
-# # # auto-update checks
+# # # Register auto-update checks
 init python in sup_utils:
     mas_submod_utils.registerFunction("ch30_reset", SubmodUpdater.doLogicInThread, auto_error_handling=False)
     mas_submod_utils.registerFunction("ch30_day", SubmodUpdater.doLogicInThread, auto_error_handling=False)
-
-# # # SUPPROGRESSBAR CLASS
-# Early defination since we're using this in the SubmodUpdater class
-init -992 python in sup_utils:
-    from store import AnimatedValue
-
-    class SUPProgressBar(AnimatedValue):
-        """
-        Subclass of AnimatedValue which is a subclass of the BarValue class
-        Implements advanced animated bar
-        TODO:
-            subclass the Bar class, add a screen statement for it
-        """
-        def __init__(self, value=0, range=100, delay=0.25, old_value=None):
-            if old_value is None:
-                old_value = value
-
-            self.value = value
-            self.range = range
-            self.delay = delay
-            self.old_value = old_value
-            self.start_time = None
-
-            self.adjustment = None
-
-        def replaces(self, other):
-            return
-
-        def add_value(self, value):
-            if self.value + value > self.range:
-                value = self.range - self.value
-
-            elif self.value + value < 0:
-                value = 0 - self.value
-
-            if value == 0:
-                return
-
-            self.old_value = self.adjustment._value
-            self.value += value
-            self.start_time = None
-            renpy.restart_interaction()
-
-        def reset(self):
-            self.value = 0
-            self.old_value = 0
-            self.start_time = None
-
-# # # END OF THE SUPPROGRESSBAR CLASS
-
-init -999 python:
-    import os
-    os.environ["SSL_CERT_FILE"] = renpy.config.gamedir + "/python-packages/certifi/cacert.pem"
 
 # # # Icons for different update states
 image sup_indicator_update_downloading:
     store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.INDICATOR_UPDATE_DOWNLOADING
     align (0.5, 0.5)
     ypos 1
-    # alpha 0.0
     zoom 1.1
     subpixel True
-    # block:
-    #     ease 0.75 alpha 1.0
-    #     ease 0.75 alpha 0.1
-    #     repeat
 
 image sup_indicator_update_available:
     store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.INDICATOR_UPDATE_AVAILABLE
     align (0.5, 0.5)
-    # alpha 0.0
     zoom 1.2
     subpixel True
-    # block:
-    #     ease 0.75 alpha 1.0
-    #     ease 0.75 alpha 0.1
-    #     repeat
+
+transform sup_indicator_transform:
+    block:
+        ease 0.75 alpha 1.0
+        pause 1.0
+        ease 0.75 alpha 0.0
+        repeat
 
 # basically a placeholder
 image sup_indicator_no_update = Solid("#00000000", xsize=20, ysize=20)
@@ -1534,6 +1572,141 @@ image sup_progress_bar_text:
         "sup_text_updating_4"
         pause 0.75
         repeat
+
+# # # Submod Updater Plugin settings screen
+screen sup_setting_pane():
+    # default submod_updaters = store.sup_utils.SubmodUpdater.getUpdatersForOutdatedSubmods()
+    # default total_submod_updaters = len(submod_updaters)
+    default updatable_submod_updaters = store.sup_utils.SubmodUpdater.getUpdatersForOutdatedSubmods(ignore_if_cant_update=True)
+    default total_updatable_submod_updaters = len(updatable_submod_updaters)
+
+    if store.sup_utils.SubmodUpdater.hasOutdatedSubmods():
+        vbox:
+            # ypos 0
+            xmaximum 800
+            xfill True
+            style_prefix "check"
+
+            textbutton "{b}Read more about new updates!{/b}":
+                ypos 1
+                selected False
+                action Show("sup_available_updates")
+
+            if total_updatable_submod_updaters > 0:
+                textbutton "{b}Update all submods now!{/b}":
+                    ypos 1
+                    selected False
+                    action Show(
+                        "sup_confirm_bulk_update",
+                        submod_updaters=updatable_submod_updaters,
+                        from_submod_screen=True
+                    )
+
+# # # Screen that show all available updates
+screen sup_available_updates():
+    key "noshift_T" action NullAction()
+    key "noshift_t" action NullAction()
+    key "noshift_M" action NullAction()
+    key "noshift_m" action NullAction()
+    key "noshift_P" action NullAction()
+    key "noshift_p" action NullAction()
+    key "noshift_E" action NullAction()
+    key "noshift_e" action NullAction()
+
+    default submod_updaters = store.sup_utils.SubmodUpdater.getUpdatersForOutdatedSubmods()
+    # default total_submod_updaters = len(submod_updaters)
+    default updatable_submod_updaters = store.sup_utils.SubmodUpdater.getUpdatersForOutdatedSubmods(ignore_if_cant_update=True)
+    default total_updatable_submod_updaters = len(updatable_submod_updaters)
+
+    modal True
+
+    zorder 200
+
+    style_prefix "confirm"
+    # style_prefix "check"
+    add mas_getTimeFile("gui/overlay/confirm.png")
+
+    frame:
+        vbox:
+            ymaximum 300
+            xmaximum 800
+            xfill True
+            yfill False
+            spacing 5
+
+            viewport:
+                id "viewport"
+                scrollbars "vertical"
+                ymaximum 250
+                xmaximum 780
+                xfill True
+                yfill False
+                mousewheel True
+
+                vbox:
+                    xmaximum 780
+                    xfill True
+                    yfill False
+                    box_wrap False
+
+                    for submod_updater in submod_updaters:
+                        if submod_updater.should_notify:
+                            hbox:
+                                xpos 20
+                                spacing 10
+                                xmaximum 780
+
+                                text "[submod_updater.id]"
+                                text "v[submod_updater._submod.version]"
+                                text " >>> "
+                                text "v[submod_updater.latest_version]"
+
+                            hbox:
+                                xpos 5
+                                spacing 10
+                                xmaximum 780
+
+                                textbutton "What's new?":
+                                    style "check_button"
+                                    ypos 1
+                                    action [
+                                        Show(
+                                            "sup_update_preview",
+                                            title=submod_updater.update_name,
+                                            body=submod_updater.update_changelog
+                                        ),
+                                        Hide("sup_available_updates")
+                                    ]
+
+                                if (
+                                    submod_updater.allow_updates
+                                    and not submod_updater.isUpdating()
+                                ):
+                                    textbutton "Update now!":
+                                        style "check_button"
+                                        ypos 1
+                                        action [
+                                            Show("sup_confirm_single_update", submod_updater=submod_updater),
+                                            Hide("sup_available_updates")
+                                        ]
+
+            hbox:
+                xalign 0.5
+                spacing 100
+
+                if total_updatable_submod_updaters > 0:
+                    textbutton "Update all":
+                        action [
+                            Show(
+                                "sup_confirm_bulk_update",
+                                submod_updaters=updatable_submod_updaters,
+                                from_submod_screen=False
+                            ),
+                            Hide("sup_available_updates")
+                        ]
+
+                textbutton "Close":
+                    action Hide("sup_available_updates")
 
 # # # Update preview screen
 #
@@ -1579,9 +1752,12 @@ screen sup_update_preview(title, body):
 
             textbutton "Close":
                 xalign 0.5
-                action Hide("sup_update_preview")
+                action [
+                    Hide("sup_update_preview"),
+                    Show("sup_available_updates")
+                ]
 
-# # # Confirm screen
+# # # Confirm screen a single update
 #
 # IN:
 #    submod_updater - updater
@@ -1654,18 +1830,22 @@ screen sup_confirm_single_update(submod_updater):
                             extraction_depth=submod_updater._extraction_depth
                         ),
                         Hide("sup_confirm_single_update"),
-                        Show("sup_single_update_screen")
+                        Show("sup_single_update_screen", submod_updater=submod_updater)
                     ]
 
                 textbutton "No":
-                    action Hide("sup_confirm_single_update")
+                    action [
+                        Hide("sup_confirm_single_update"),
+                        Show("sup_available_updates")
+                    ]
 
-# # # Confirm screen
+# # # Confirm screen for a bulk update
 #
 # IN:
 #    submod_updaters - updaters
+#    from_submod_screen - whether or not we open this screen from the submod screen
 #
-screen sup_confirm_bulk_update(submod_updaters):
+screen sup_confirm_bulk_update(submod_updaters, from_submod_screen=False):
     key "noshift_T" action NullAction()
     key "noshift_t" action NullAction()
     key "noshift_M" action NullAction()
@@ -1732,14 +1912,29 @@ screen sup_confirm_bulk_update(submod_updaters):
                             submod_updaters
                         ),
                         Hide("sup_confirm_bulk_update"),
-                        Show("sup_bulk_update_screen")
+                        Show(
+                            "sup_bulk_update_screen",
+                            submod_updaters=submod_updaters,
+                            from_submod_screen=from_submod_screen
+                        )
                     ]
 
                 textbutton "No":
-                    action Hide("sup_confirm_bulk_update")
+                    action [
+                        Hide("sup_confirm_bulk_update"),
+                        If(
+                            (not from_submod_screen),
+                            true=Show("sup_available_updates"),
+                            false=NullAction()
+                        )
+                    ]
 
-# # # Update screen for single submod
-screen sup_single_update_screen():
+# # # Update screen for single update
+#
+# IN:
+#    submod_updater - updater
+#
+screen sup_single_update_screen(submod_updater):
     # for safety
     key "K_ESCAPE" action NullAction()
     key "alt_K_F4" action NullAction()
@@ -1751,14 +1946,6 @@ screen sup_single_update_screen():
     key "noshift_p" action NullAction()
     key "noshift_E" action NullAction()
     key "noshift_e" action NullAction()
-    # for usability
-    key "K_RETURN" action If(
-        (
-            not store.sup_utils.SubmodUpdater.isUpdatingAny()
-        ),
-        true=Hide("sup_single_update_screen"),
-        false=NullAction()
-    )
 
     modal True
 
@@ -1771,46 +1958,67 @@ screen sup_single_update_screen():
         vbox:
             align (0.5, 0.5)
             xsize 440
-            spacing 10
+            ysize 150
+            spacing 0
 
             if store.sup_utils.SubmodUpdater.isUpdatingAny():
-                bar:
-                    xalign 0.5
-                    xysize (400, 25)
-                    value store.sup_utils.SubmodUpdater.single_progress_bar
-                    left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.LEFT_BAR, 2, 2)
-                    right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.RIGHT_BAR, 2, 2)
-                    right_gutter 1
+                vbox:
+                    align (0.5, 0.2)
+                    spacing 0
 
-                add "sup_progress_bar_text":
-                    xalign 0.5
-                    xoffset 5
-                    ypos -35
+                    bar:
+                        xalign 0.5
+                        xysize (400, 25)
+                        value store.sup_utils.SubmodUpdater.single_progress_bar
+                        left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.LEFT_BAR, 2, 2)
+                        right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.RIGHT_BAR, 2, 2)
+                        right_gutter 1
+
+                    add "sup_progress_bar_text":
+                        xalign 0.5
+                        xoffset 5
+                        ypos -25
 
             else:
-                if store.sup_utils.SubmodUpdater.hasOutdatedSubmods():
-                    text "Please restart Monika After Story when you have finished installing updates.":
-                        xalign 0.5
+                if submod_updater.update_exception is not None:
+                    text "An error has occurred during updating. Check the log for details.":
+                        align (0.5, 0.2)
                         text_align 0.5
 
                 else:
-                    text "Please restart Monika After Story.":
-                        xalign 0.5
-                        text_align 0.5
+                    if store.sup_utils.SubmodUpdater.hasOutdatedSubmods():
+                        text "Please restart Monika After Story when you have finished installing updates.":
+                            align (0.5, 0.2)
+                            text_align 0.5
 
-                    null height 15
+                    else:
+                        text "Please restart Monika After Story.\n":
+                            align (0.5, 0.2)
+                            text_align 0.5
 
             textbutton "Ok":
-                xalign 0.5
-                sensitive not store.sup_utils.SubmodUpdater.isUpdatingAny()
-                action Hide("sup_single_update_screen")
+                align (0.5, 0.8)
+                sensitive (not store.sup_utils.SubmodUpdater.isUpdatingAny())
+                action [
+                    Hide("sup_single_update_screen"),
+                    If(
+                        (store.sup_utils.SubmodUpdater.hasOutdatedSubmods()),
+                        true=Show("sup_available_updates"),
+                        false=NullAction()
+                    )
+                ]
 
     timer 0.5:
         repeat True
         action Function(renpy.restart_interaction)
 
-# # # Update screen for bulk updating
-screen sup_bulk_update_screen():
+# # # Update screen for bulk update
+#
+# IN:
+#    submod_updaters - updaters
+#    from_submod_screen - whether or not we open this screen from the submod screen
+#
+screen sup_bulk_update_screen(submod_updaters, from_submod_screen=False):
     # for safety
     key "K_ESCAPE" action NullAction()
     key "alt_K_F4" action NullAction()
@@ -1822,15 +2030,6 @@ screen sup_bulk_update_screen():
     key "noshift_p" action NullAction()
     key "noshift_E" action NullAction()
     key "noshift_e" action NullAction()
-    # for usability
-    key "K_RETURN" action If(
-        (
-            not store.sup_utils.SubmodUpdater.isUpdatingAny()# TODO: potentially it should be safe to do only one of these checks
-            and not store.sup_utils.SubmodUpdater.isBulkUpdating()# and doing only isBulkUpdating would save some performance
-        ),
-        true=Hide("sup_bulk_update_screen"),
-        false=NullAction()
-    )
 
     modal True
 
@@ -1849,7 +2048,7 @@ screen sup_bulk_update_screen():
                 store.sup_utils.SubmodUpdater.isUpdatingAny()
                 or store.sup_utils.SubmodUpdater.isBulkUpdating()
             ):
-                # total prrogression
+                # total progress
                 bar:
                     xalign 0.5
                     xysize (400, 25)
@@ -1864,7 +2063,7 @@ screen sup_bulk_update_screen():
                     size 15
                     ypos -35
 
-                # currently updating submod prrogression
+                # currently updating submod progress
                 bar:
                     xalign 0.5
                     xysize (400, 25)
@@ -1879,141 +2078,48 @@ screen sup_bulk_update_screen():
                     ypos -35
 
             else:
-                text "Please restart Monika After Story.":
-                    xalign 0.5
-                    text_align 0.5
+                $ exceptions = [
+                    str(submod_updater.update_exception).replace("[", "[[").replace("{", "{{")
+                    for submod_updater in submod_updaters
+                    if submod_updater.update_exception is not None
+                ]
+                if len(exceptions) > 0:
+                    text "Some errors have occurred during updating. Check the log for details.":
+                        xalign 0.5
+                        text_align 0.5
 
-                null height 83
+                    null height 65
+
+                else:
+                    text "Please restart Monika After Story.":
+                        xalign 0.5
+                        text_align 0.5
+
+                    null height 80
+
+            # null height 10
 
             textbutton "Ok":
                 xalign 0.5
                 sensitive (
-                    not store.sup_utils.SubmodUpdater.isUpdatingAny()
-                    and not store.sup_utils.SubmodUpdater.isBulkUpdating()
+                    not store.sup_utils.SubmodUpdater.isUpdatingAny()# TODO: potentially it should be safe to do only one of these checks
+                    and not store.sup_utils.SubmodUpdater.isBulkUpdating()# and doing only isBulkUpdating would save some performance
                 )
-                action Hide("sup_bulk_update_screen")
+                action [
+                    Hide("sup_bulk_update_screen"),
+                    If(
+                        (
+                            not from_submod_screen
+                            and store.sup_utils.SubmodUpdater.hasOutdatedSubmods()
+                        ),
+                        true=Show("sup_available_updates"),
+                        false=NullAction()
+                    )
+                ]
 
     timer 0.5:
         repeat True
         action Function(renpy.restart_interaction)
-
-# # # Submod screen
-init python in sup_utils:
-    # helper method for this screen
-    def _getScrollBarHeight(items):
-        """
-        Calcualtes height for the scrollbar
-        (from 33 to 99 pxs)
-
-        IN:
-            items - viewpoint items
-
-        OUT:
-            int
-        """
-        height = 0
-        limit = 140
-        for item in items:
-            height += 35
-
-            if item.should_notify:
-                height += 35
-
-        return height if height <= limit else limit
-
-screen sup_setting_pane():
-    default submod_updaters = store.sup_utils.SubmodUpdater.getUpdatersForOutdatedSubmods()
-    default total_submod_updaters = len(submod_updaters)
-    default updatable_submod_updaters = store.sup_utils.SubmodUpdater.getUpdatersForOutdatedSubmods(ignore_if_cant_update=True)
-    default total_updatable_submod_updaters = len(updatable_submod_updaters)
-    default new_updates_found_text = "New updates found!" if total_submod_updaters > 1 else "A new update found!"
-
-    vbox:
-        ypos 0
-        xmaximum 800
-        xfill True
-        yfill False
-        style_prefix "check"
-
-        if store.sup_utils.SubmodUpdater.hasOutdatedSubmods():
-            vbox:
-                xmaximum 800
-                xfill True
-                yfill False
-
-                hbox:
-                    spacing 0
-
-                    text "[new_updates_found_text]"
-
-                    if total_updatable_submod_updaters > 1:
-                        textbutton "{b}Update all now!{/b}":
-                            pos (-20, 1)
-                            action ShowTransient("sup_confirm_bulk_update", submod_updaters=updatable_submod_updaters)
-
-                    elif (
-                        total_updatable_submod_updaters > 0
-                        and total_submod_updaters > 2
-                    ):
-                        textbutton "{b}Update all now!{/b}":
-                            pos (-20, 1)
-                            action ShowTransient("sup_confirm_bulk_update", submod_updaters=[updatable_submod_updaters])
-
-                hbox:
-                    box_reverse True
-                    viewport:
-                        id "viewport"
-                        ymaximum 140
-                        xmaximum 780
-                        xfill True
-                        yfill False
-                        mousewheel True
-
-                        vbox:
-                            xmaximum 780
-                            xfill True
-                            yfill False
-                            box_wrap False
-
-                            for submod_updater in submod_updaters:
-                                if submod_updater.should_notify:
-                                    hbox:
-                                        xpos 20
-                                        spacing 10
-                                        xmaximum 780
-
-                                        text "[submod_updater.id]"
-                                        text "v[submod_updater._submod.version]"
-                                        text " >>> "
-                                        text "v[submod_updater.latest_version]"
-
-                                    hbox:
-                                        xpos 25
-                                        spacing 10
-                                        xmaximum 780
-
-                                        textbutton "What's new?":
-                                            ypos 1
-                                            action ShowTransient(
-                                                "sup_update_preview",
-                                                title=submod_updater.update_name,
-                                                body=submod_updater.update_changelog
-                                            )
-
-                                        if (
-                                            submod_updater.allow_updates
-                                            and not submod_updater.isUpdating()
-                                        ):
-                                            textbutton "Update now!":
-                                                ypos 1
-                                                action ShowTransient("sup_confirm_single_update", submod_updater=submod_updater)
-
-                    bar:
-                        style "classroom_vscrollbar"
-                        xalign 0.005
-                        ymaximum store.sup_utils._getScrollBarHeight(submod_updaters)
-                        yfill False
-                        value YScrollValue("viewport")
 
 # # # Overrides
 init 100:
@@ -2048,6 +2154,8 @@ init 100:
                                 add store.sup_utils.SubmodUpdater.getIcon(submod.name):
                                     yanchor 0
                                     ypos 18
+                                    if not persistent._mas_disable_animations:
+                                        at sup_indicator_transform
 
                             hbox:
                                 spacing 20
