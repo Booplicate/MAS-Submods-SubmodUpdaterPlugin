@@ -8,7 +8,7 @@ init -990 python:
             "A util submod that makes updating other submods easier. "
             "More information on the project's {a=https://github.com/Booplicate/MAS-Submods-SubmodUpdaterPlugin}{i}{u}GitHub{/u}{/i}{/a}."
         ),
-        version="1.1",
+        version="1.2",
         settings_pane="sup_setting_pane"
     )
 
@@ -1554,7 +1554,7 @@ image sup_indicator_update_available:
 transform sup_indicator_transform:
     block:
         ease 0.75 alpha 1.0
-        pause 1.0
+        pause 2.0
         ease 0.75 alpha 0.0
         repeat
 
@@ -1583,8 +1583,6 @@ image sup_progress_bar_text:
 
 # # # Submod Updater Plugin settings screen
 screen sup_setting_pane():
-    # default submod_updaters = store.sup_utils.SubmodUpdater.getUpdatersForOutdatedSubmods()
-    # default total_submod_updaters = len(submod_updaters)
     default updatable_submod_updaters = store.sup_utils.SubmodUpdater.getUpdatersForOutdatedSubmods(ignore_if_cant_update=True)
     default total_updatable_submod_updaters = len(updatable_submod_updaters)
 
@@ -1621,8 +1619,7 @@ screen sup_available_updates():
     key "noshift_E" action NullAction()
     key "noshift_e" action NullAction()
 
-    default submod_updaters = store.sup_utils.SubmodUpdater.getUpdatersForOutdatedSubmods()
-    # default total_submod_updaters = len(submod_updaters)
+    default submod_updaters = sorted(store.sup_utils.SubmodUpdater.getUpdatersForOutdatedSubmods(), key=lambda updater: updater.id)
     default updatable_submod_updaters = store.sup_utils.SubmodUpdater.getUpdatersForOutdatedSubmods(ignore_if_cant_update=True)
     default total_updatable_submod_updaters = len(updatable_submod_updaters)
 
@@ -1631,7 +1628,6 @@ screen sup_available_updates():
     zorder 200
 
     style_prefix "confirm"
-    # style_prefix "check"
     add mas_getTimeFile("gui/overlay/confirm.png")
 
     frame:
