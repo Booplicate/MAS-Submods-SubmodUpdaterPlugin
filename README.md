@@ -101,10 +101,10 @@ Some other properties.
 There're probably some more methods and properties. But it's **highly recommended to avoid using them**. Although, if you're really interested, you can read the sources.
 
 ## Some important notes:
-Versioning of your submod and tags you're using on GitHub must be the same format (`0.0.1`).
+The versioning of your submod and the tags you're using on GitHub must have the same format (`0.0.1`), otherwise you'll have to specify the parser via the `tag_formatter` argument.
 
 Requests to GitHub should be done with an interval of no less than 1 hour.
 
-Recommended to install submods in `game/Submods/`.
+Recommended to have submods in `game/Submods/`.
 
 The user can install only one update at a time, to apply the changes, they'll need to restart the game.

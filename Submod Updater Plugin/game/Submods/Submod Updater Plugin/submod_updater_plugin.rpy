@@ -114,6 +114,7 @@ init -991 python in sup_utils:
             self.msg = msg
             self.e = e
             writeLog(self.msg, e=e)
+
         def __str__(self):
             return self.msg
 
@@ -177,8 +178,9 @@ init -991 python in sup_utils:
         single_progress_bar = SUPProgressBar()
         bulk_progress_bar = SUPProgressBar()
 
-        # normalized path of the game directory
+        # normalized paths
         BASE_DIRECTORY = renpy.config.basedir.replace("\\", "/")
+        GAME_DIRECTORY = renpy.config.gamedir.replace("\\", "/")
         # img paths constants
         INDICATOR_UPDATE_DOWNLOADING = "/indicator_update_downloading.png"
         INDICATOR_UPDATE_AVAILABLE = "/indicator_update_available.png"
@@ -237,7 +239,7 @@ init -991 python in sup_utils:
                     (Default: True)
 
                 submod_dir - relative file path to the directory of the submod
-                    e.g. 'game/.../your submod folder'
+                    e.g. '/.../your submod folder'
                     NOTE: if None, the updater will try to find the path itself
                     NOTE: if None when we're trying to update the submod and no update_dir specified, the update will be aborted
                     (Default: None)
@@ -294,7 +296,7 @@ init -991 python in sup_utils:
             self.should_notify = should_notify
             self.auto_check = auto_check
             self.allow_updates = allow_updates
-            self._submod_dir = submod_dir or self.__getFilePath()
+            self._submod_dir = submod_dir or self.__getCurrentFilePath()
             self._update_dir = update_dir
             self._extraction_depth = extraction_depth
             self.__attachment_id = attachment_id
@@ -403,7 +405,7 @@ init -991 python in sup_utils:
             """
             return self.__updated
 
-        def __getFilePath(self):
+        def __getCurrentFilePath(self):
             """
             Return a relative filepath to the submod
 
@@ -411,7 +413,13 @@ init -991 python in sup_utils:
                 string with the filepath,
                 or None if we weren't able to get it
             """
-            path = renpy.get_filename_line()[0].rpartition("/")[0]
+            # get the filepath
+            path = renpy.get_filename_line()[0]
+            # cut so we don't include the 'game' folder
+            if path.startswith("game/"):
+                path = path.partition("game/")[-1]
+            # cut so we don't include the file itself
+            path = path.rpartition("/")[0]
             return path if path else None
 
         def __buildJSONRequest(self):
@@ -575,7 +583,7 @@ init -991 python in sup_utils:
             if self._submod_dir is not None:
                 if absolute:
                     path = os.path.join(
-                        self.BASE_DIRECTORY,
+                        self.GAME_DIRECTORY,
                         self._submod_dir.lstrip("/")# strip just in case, because join doesn't work if there's `/` at the beggining of the path
                     ).replace("\\", "/")
 
@@ -875,9 +883,9 @@ init -991 python in sup_utils:
                         update_dir = self._submod_dir
 
                     # Make it an absolute path if needed
-                    if self.BASE_DIRECTORY not in update_dir:
+                    if self.GAME_DIRECTORY not in update_dir:
                         update_dir = os.path.join(
-                            self.BASE_DIRECTORY,
+                            self.GAME_DIRECTORY,
                             update_dir.lstrip("/")# strip just in case, because join doesn't work if there's `/` at the beggining of the path
                         ).replace("\\", "/")
 
@@ -888,7 +896,7 @@ init -991 python in sup_utils:
                 )
 
                 temp_files_dir = os.path.join(
-                    self.BASE_DIRECTORY,
+                    self.GAME_DIRECTORY,
                     self._submod_dir.lstrip("/"),
                     temp_folder_name
                 ).replace("\\", "/")
@@ -1531,14 +1539,14 @@ init python in sup_utils:
 
 # # # Icons for different update states
 image sup_indicator_update_downloading:
-    store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.INDICATOR_UPDATE_DOWNLOADING
+    store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", False) + store.sup_utils.SubmodUpdater.INDICATOR_UPDATE_DOWNLOADING
     align (0.5, 0.5)
     ypos 1
     zoom 1.1
     subpixel True
 
 image sup_indicator_update_available:
-    store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.INDICATOR_UPDATE_AVAILABLE
+    store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", False) + store.sup_utils.SubmodUpdater.INDICATOR_UPDATE_AVAILABLE
     align (0.5, 0.5)
     zoom 1.2
     subpixel True
@@ -1970,8 +1978,8 @@ screen sup_single_update_screen(submod_updater):
                         xalign 0.5
                         xysize (400, 25)
                         value store.sup_utils.SubmodUpdater.single_progress_bar
-                        left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.LEFT_BAR, 2, 2)
-                        right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.RIGHT_BAR, 2, 2)
+                        left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", False) + store.sup_utils.SubmodUpdater.LEFT_BAR, 2, 2)
+                        right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", False) + store.sup_utils.SubmodUpdater.RIGHT_BAR, 2, 2)
                         right_gutter 1
 
                     add "sup_progress_bar_text":
@@ -2053,8 +2061,8 @@ screen sup_bulk_update_screen(submod_updaters, from_submod_screen=False):
                     xalign 0.5
                     xysize (400, 25)
                     value store.sup_utils.SubmodUpdater.bulk_progress_bar# This's handled inside SubmodUpdater
-                    left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.LEFT_BAR, 2, 2)
-                    right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.RIGHT_BAR, 2, 2)
+                    left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", False) + store.sup_utils.SubmodUpdater.LEFT_BAR, 2, 2)
+                    right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", False) + store.sup_utils.SubmodUpdater.RIGHT_BAR, 2, 2)
                     right_gutter 1
 
                 text "Progress: [store.sup_utils.SubmodUpdater.totalFinishedUpdaters()] / [store.sup_utils.SubmodUpdater.totalQueuedUpdaters()]":
@@ -2068,8 +2076,8 @@ screen sup_bulk_update_screen(submod_updaters, from_submod_screen=False):
                     xalign 0.5
                     xysize (400, 25)
                     value store.sup_utils.SubmodUpdater.single_progress_bar# This's handled inside SubmodUpdater
-                    left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.LEFT_BAR, 2, 2)
-                    right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", True) + store.sup_utils.SubmodUpdater.RIGHT_BAR, 2, 2)
+                    left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", False) + store.sup_utils.SubmodUpdater.LEFT_BAR, 2, 2)
+                    right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", False) + store.sup_utils.SubmodUpdater.RIGHT_BAR, 2, 2)
                     right_gutter 1
 
                 add "sup_progress_bar_text":
