@@ -14,7 +14,7 @@ Currently known submods that support this util:
 2. The packages should be installed into your `DDLC/` folder. Exactly this folder, you should have `DDLC.exe` there.
 
 ## Usage:
-**This part is for the developers that want add support for this util to their submods, the actual end users do not need to do any manipulations - just install this submod.**
+**This part is for the developers that want to add support for this util to their submods, the actual end users do not need to do any manipulations - just install this submod.**
 
 To use the full power of the updater, you'll need to define your submod first. After your submod is registered in the submods map, you can define an updater. Keep in mind that the name you pass in for the updater must be the same you used when defined your `Submod` object. Example:
 ```python

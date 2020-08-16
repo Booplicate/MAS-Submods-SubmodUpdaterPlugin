@@ -5,8 +5,8 @@ init -990 python:
         author="Booplicate",
         name="Submod Updater Plugin",
         description=(
-            "A util submod that makes updating other submods easier. "
-            "More information on the project's {a=https://github.com/Booplicate/MAS-Submods-SubmodUpdaterPlugin}{i}{u}GitHub{/u}{/i}{/a}."
+            "A util submod that adds an in-game updater for other submods. "
+            "Check {a=https://github.com/Booplicate/MAS-Submods-SubmodUpdaterPlugin}{i}{u}here{/u}{/i}{/a} if you want your submod to use this."
         ),
         version="1.2",
         settings_pane="sup_setting_pane"
