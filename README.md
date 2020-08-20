@@ -5,6 +5,7 @@ A util submod that makes updating other submods easier. The util can automatical
 
 Currently known submods that support this util:
 - [YouTube Music](https://github.com/Booplicate/MAS-Submods-YouTubeMusic)
+- [Auto Atmos Change](https://github.com/multimokia/MAS-Submod-Auto-Atmos-Change/tree/master/game/Submods/Auto%20Weather%20Change)
 
 ## Installation:
 0. Make sure you're running the latest version of MAS.
@@ -16,7 +17,7 @@ Currently known submods that support this util:
 ## Usage:
 **This part is for the developers that want to add support for this util to their submods, the actual end users do not need to do any manipulations - just install this submod.**
 
-To use the full power of the updater, you'll need to define your submod first. After your submod is registered in the submods map, you can define an updater. Keep in mind that the name you pass in for the updater must be the same you used when defined your `Submod` object. Example:
+To use the full power of the updater, you'll need to define your submod first. After your submod is registered in the submods map, you can define an updater for it. Keep in mind that the name you pass in for the updater must be the same you used when defined your `Submod` object. Example:
 ```python
 # Register the submod
 init -990 python:
@@ -29,7 +30,7 @@ init -990 python:
     )
 
 # Register the updater
-init -990 python:
+init -989 python:
     if store.mas_submod_utils.isSubmodInstalled("Submod Updater Plugin"):
         store.sup_utils.SubmodUpdater(
             submod="Your Submod Name",
@@ -49,8 +50,8 @@ There're currently 8 additional parameters you can use:
 - `attachment_id` - id of the attachment with updates on GitHub. If you attach only one file, it'd be `0`, if two, depending on the order it can be either `0` or `1`. And so on. Defaults to `0`. If `None`, the updater will download **the source files**. Note that GitHub doesn't support distributing releases that way. It will be noticeably slower to download and sometimes may fail to download at all. In short: use attachments.
 - `tag_formatter` - if not `None`, assuming it's a function that accepts version tag from github as a string, formats it in a way, and returns a new formatted tag as a string. Exceptions are auto-handled. If `None` (default), no formatting applies on version tags.
 
-Define your updater at init level `-990`, **after** you defined the submod.
-The `store.mas_submod_utils.isSubmodInstalled("Submod Updater Plugin")` check is optional, but it'd allow you to support both versions of your submod: with the updater and without it.
+Define your updater at init level `-989`, **after** you defined the submod.
+The `store.mas_submod_utils.isSubmodInstalled("Submod Updater Plugin")` check is optional, but it'll allow you to support both versions of your submod: with the updater and without it. On a side note, if you don't do that check and you need to define the updater earlier for some reason, you can init your updater at `-990`.
 
 ## API:
 Some methods of the `SubmodUpdater` class you can work with.
@@ -98,13 +99,13 @@ Some other properties.
 - `_json` - json data from GitHub (but better use the appropriate properties to access it). Can be `None`. Might return not what you'd expect it to due to threading.
 - `_last_update_check` - `datetime.datetime` of the last time we checked for an update. Can be `None`. Might return not what you'd expect it to due to threading.
 
-There're probably some more methods and properties. But it's **highly recommended to avoid using them**. Although, if you're really interested, you can read the sources.
+There are probably some more methods and properties. But it's **highly recommended to avoid using them**. Although, if you're really interested, you'll find them in the sources.
 
 ## Some important notes:
 The versioning of your submod and the tags you're using on GitHub must have the same format (`0.0.1`), otherwise you'll have to specify the parser via the `tag_formatter` argument.
 
 Requests to GitHub should be done with an interval of no less than 1 hour.
 
-Recommended to have submods in `game/Submods/`.
+Recommended to have submods in `/game/Submods/`.
 
 The user can install only one update at a time, to apply the changes, they'll need to restart the game.
