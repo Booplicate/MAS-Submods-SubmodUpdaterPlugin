@@ -8,7 +8,7 @@ init -990 python:
             "A util submod that adds an in-game updater for other submods. "
             "Check {a=https://github.com/Booplicate/MAS-Submods-SubmodUpdaterPlugin}{i}{u}here{/u}{/i}{/a} if you want your submod to use this."
         ),
-        version="1.2",
+        version="1.3",
         settings_pane="sup_setting_pane"
     )
 
@@ -21,10 +21,14 @@ init -990 python:
         update_dir=""
     )
 
-# Add our certifs
-init -999 python:
-    import os
-    os.environ["SSL_CERT_FILE"] = renpy.config.gamedir + "/python-packages/certifi/cacert.pem"
+init -999:
+    # Add our certifs
+    python:
+        import os
+        os.environ["SSL_CERT_FILE"] = renpy.config.gamedir + "/python-packages/certifi/cacert.pem"
+
+    # Persistent var for our settings
+    default persistent._sup_settings = dict()
 
 # Main code
 init -991 python in sup_utils:
@@ -35,10 +39,7 @@ init -991 python in sup_utils:
     import time
     import urllib2
     import threading
-    from store import mas_submod_utils
-    from store import mas_utils
-    from store import ConditionSwitch
-    from store import AnimatedValue
+    from store import mas_submod_utils, mas_utils, ConditionSwitch, AnimatedValue, persistent
     from json import loads as loadJSON
     from zipfile import ZipFile
     from subprocess import Popen as subprocOpen
@@ -238,13 +239,13 @@ init -991 python in sup_utils:
                     If False you'll need to implement another way to update (or don't if you only want to notify about updates)
                     (Default: True)
 
-                submod_dir - relative file path to the directory of the submod
-                    e.g. '/.../your submod folder'
+                submod_dir - relative file path to the directory of the submod (relative to config.gamedir)
+                    e.g. '/Submods/Your submod folder'
                     NOTE: if None, the updater will try to find the path itself
                     NOTE: if None when we're trying to update the submod and no update_dir specified, the update will be aborted
                     (Default: None)
 
-                update_dir - directory where updates will be installed to
+                update_dir - directory where updates will be installed in
                     NOTE: if None, updates will be installed in the submod directory if one was specified
                     NOTE: if empty string, updates will be installed right in the base directory (the folder with DDLC.exe)
                     (Default: None)
@@ -289,14 +290,41 @@ init -991 python in sup_utils:
                 SubmodUpdaterError("Submod '{0}' had already been registered in Submod Updater Plugin. Ignoring.".format(submod_name))
                 return
 
+            if submod_name not in persistent._sup_settings:
+                persistent._sup_settings[submod_name] = {
+                    "should_notify": should_notify,
+                    "auto_check": auto_check,
+                    "allow_updates": allow_updates
+                }
+
             self.id = submod_name
             self._submod = submod_obj
             self.__user_name = user_name
             self.__repository_name = repository_name
-            self.should_notify = should_notify
-            self.auto_check = auto_check
-            self.allow_updates = allow_updates
-            self._submod_dir = submod_dir or self.__getCurrentFilePath()
+
+            # Try to load settings from persistent
+            _persist_should_notify = persistent._sup_settings[self.id].get("should_notify", None)
+            if _persist_should_notify is not None:
+                self.should_notify = _persist_should_notify
+
+            else:
+                self.should_notify = should_notify
+
+            _persist_auto_check = persistent._sup_settings[self.id].get("auto_check", None)
+            if _persist_auto_check is not None:
+                self.auto_check = _persist_auto_check
+
+            else:
+                self.auto_check = auto_check
+
+            _persist_allow_updates = persistent._sup_settings[self.id].get("allow_updates", None)
+            if _persist_allow_updates is not None:
+                self.allow_updates = _persist_allow_updates
+
+            else:
+                self.allow_updates = allow_updates
+
+            self._submod_dir = submod_dir.replace("\\", "/") if submod_dir is not None else self.__getCurrentFilePath()
             self._update_dir = update_dir
             self._extraction_depth = extraction_depth
             self.__attachment_id = attachment_id
@@ -311,9 +339,6 @@ init -991 python in sup_utils:
             self.update_exception = None
 
             self.__updateCheckLock = threading.Lock()
-            # self.__updateAvailablePropLock = threading.Lock()
-            # self.__updatingPropLock = threading.Lock()
-            # self.__updatedPropLock = threading.Lock()
 
             self.registered_updaters[self.id] = self
 
@@ -380,18 +405,21 @@ init -991 python in sup_utils:
             Toggles the should_notify property
             """
             self.should_notify = not self.should_notify
+            persistent._sup_settings[self.id]["should_notify"] = self.should_notify
 
         def toggleAutoChecking(self):
             """
             Toggles the auto_check property
             """
             self.auto_check = not self.auto_check
+            persistent._sup_settings[self.id]["auto_check"] = self.auto_check
 
         def toggleUpdates(self):
             """
             Toggles the allow_updates property
             """
             self.allow_updates = not self.allow_updates
+            persistent._sup_settings[self.id]["allow_updates"] = self.allow_updates
 
         def isUpdating(self):
             """
@@ -882,11 +910,25 @@ init -991 python in sup_utils:
 
                         update_dir = self._submod_dir
 
+                    update_dir = update_dir.replace("\\", "/")
+
                     # Make it an absolute path if needed
-                    if self.GAME_DIRECTORY not in update_dir:
+                    if (
+                        (
+                            update_dir.startswith("game/")
+                            or update_dir.startswith("/game/")
+                        )
+                        and self.BASE_DIRECTORY not in update_dir
+                    ):
+                        update_dir = os.path.join(
+                            self.BASE_DIRECTORY,
+                            update_dir.lstrip("/")# strip just in case, because join doesn't work if there's `/` at the beggining of the path
+                        ).replace("\\", "/")
+
+                    elif self.GAME_DIRECTORY not in update_dir:
                         update_dir = os.path.join(
                             self.GAME_DIRECTORY,
-                            update_dir.lstrip("/")# strip just in case, because join doesn't work if there's `/` at the beggining of the path
+                            update_dir.lstrip("/")# strip just in case
                         ).replace("\\", "/")
 
                 # if temp_folder_name is None:
@@ -1248,6 +1290,23 @@ init -991 python in sup_utils:
             return cls.registered_updaters.get(submod_name, None)
 
         @classmethod
+        def getUpdaters(cls, exclude_sup=True):
+            """
+            Returns a list of all registered updaters
+
+            IN:
+                exclude_sup - whether or not we exclude Submod Updater Plugin's updater from the list
+
+            OUT:
+                list of updaters
+            """
+            rv = cls.registered_updaters.values()
+            if exclude_sup:
+                rv = filter(lambda updater: updater.id != "Submod Updater Plugin", rv)
+
+            return rv
+
+        @classmethod
         def _getUpdaterForUpdatingSubmod(cls):
             """
             Returns the updater for the submod that is currently being updated
@@ -1583,17 +1642,23 @@ image sup_progress_bar_text:
 
 # # # Submod Updater Plugin settings screen
 screen sup_setting_pane():
+    default total_updaters = len(store.sup_utils.SubmodUpdater.getUpdaters())
     default updatable_submod_updaters = store.sup_utils.SubmodUpdater.getUpdatersForOutdatedSubmods(ignore_if_cant_update=True)
     default total_updatable_submod_updaters = len(updatable_submod_updaters)
 
-    if store.sup_utils.SubmodUpdater.hasOutdatedSubmods():
-        vbox:
-            # ypos 0
-            xmaximum 800
-            xfill True
-            style_prefix "check"
+    vbox:
+        xmaximum 800
+        xfill True
+        style_prefix "check"
 
-            textbutton "{b}Read more about new updates!{/b}":
+        if total_updaters > 0:
+            textbutton "{b}Change settings{/b}":
+                ypos 1
+                selected False
+                action Show("sup_settings")
+
+        if store.sup_utils.SubmodUpdater.hasOutdatedSubmods():
+            textbutton "{b}Read more about new updates{/b}":
                 ypos 1
                 selected False
                 action Show("sup_available_updates")
@@ -1607,6 +1672,65 @@ screen sup_setting_pane():
                         submod_updaters=updatable_submod_updaters,
                         from_submod_screen=True
                     )
+
+# # # A screen to change updaters' settings
+screen sup_settings():
+    key "noshift_T" action NullAction()
+    key "noshift_t" action NullAction()
+    key "noshift_M" action NullAction()
+    key "noshift_m" action NullAction()
+    key "noshift_P" action NullAction()
+    key "noshift_p" action NullAction()
+    key "noshift_E" action NullAction()
+    key "noshift_e" action NullAction()
+
+    default submod_updaters = sorted(store.sup_utils.SubmodUpdater.getUpdaters(), key=lambda updater: updater.id)
+
+    modal True
+
+    zorder 200
+
+    style_prefix "confirm"
+    add mas_getTimeFile("gui/overlay/confirm.png")
+
+    frame:
+        vbox:
+            ymaximum 300
+            xmaximum 800
+            xfill True
+            yfill False
+            spacing 5
+
+            viewport:
+                id "viewport"
+                scrollbars "vertical"
+                ymaximum 250
+                xmaximum 780
+                xfill True
+                yfill False
+                mousewheel True
+
+                vbox:
+                    xmaximum 780
+                    xfill True
+                    yfill False
+                    box_wrap False
+
+                    for submod_updater in submod_updaters:
+                        text "[submod_updater.id] v[submod_updater._submod.version]"
+
+                        hbox:
+                            xpos 5
+                            spacing 10
+                            xmaximum 780
+
+                            textbutton ("Disable notifications" if submod_updater.should_notify else "Enable notifications"):
+                                style "check_button"
+                                ypos 1
+                                action Function(submod_updater.toggleNotifs)
+
+            textbutton "Close":
+                action Hide("sup_settings")
 
 # # # Screen that show all available updates
 screen sup_available_updates():
@@ -1654,45 +1778,44 @@ screen sup_available_updates():
                     box_wrap False
 
                     for submod_updater in submod_updaters:
-                        if submod_updater.should_notify:
-                            hbox:
-                                xpos 20
-                                spacing 10
-                                xmaximum 780
+                        hbox:
+                            xpos 20
+                            spacing 10
+                            xmaximum 780
 
-                                text "[submod_updater.id]"
-                                text "v[submod_updater._submod.version]"
-                                text " >>> "
-                                text "v[submod_updater.latest_version]"
+                            text "[submod_updater.id]"
+                            text "v[submod_updater._submod.version]"
+                            text " >>> "
+                            text "v[submod_updater.latest_version]"
 
-                            hbox:
-                                xpos 5
-                                spacing 10
-                                xmaximum 780
+                        hbox:
+                            xpos 5
+                            spacing 10
+                            xmaximum 780
 
-                                textbutton "What's new?":
+                            textbutton "What's new?":
+                                style "check_button"
+                                ypos 1
+                                action [
+                                    Show(
+                                        "sup_update_preview",
+                                        title=submod_updater.update_name,
+                                        body=submod_updater.update_changelog
+                                    ),
+                                    Hide("sup_available_updates")
+                                ]
+
+                            if (
+                                submod_updater.allow_updates
+                                and not submod_updater.isUpdating()
+                            ):
+                                textbutton "Update now!":
                                     style "check_button"
                                     ypos 1
                                     action [
-                                        Show(
-                                            "sup_update_preview",
-                                            title=submod_updater.update_name,
-                                            body=submod_updater.update_changelog
-                                        ),
+                                        Show("sup_confirm_single_update", submod_updater=submod_updater),
                                         Hide("sup_available_updates")
                                     ]
-
-                                if (
-                                    submod_updater.allow_updates
-                                    and not submod_updater.isUpdating()
-                                ):
-                                    textbutton "Update now!":
-                                        style "check_button"
-                                        ypos 1
-                                        action [
-                                            Show("sup_confirm_single_update", submod_updater=submod_updater),
-                                            Hide("sup_available_updates")
-                                        ]
 
             hbox:
                 xalign 0.5

@@ -8,11 +8,11 @@ Currently known submods that support this util:
 - [Auto Atmos Change](https://github.com/multimokia/MAS-Submod-Auto-Atmos-Change/tree/master/game/Submods/Auto%20Weather%20Change)
 
 ## Installation:
-0. Make sure you're running the latest version of MAS.
+1. Make sure you're running the latest version of MAS.
 
-1. Download [the latest release](https://github.com/Booplicate/MAS-Submods-SubmodUpdaterPlugin/releases/latest) of the submod.
+2. Download [the latest release](https://github.com/Booplicate/MAS-Submods-SubmodUpdaterPlugin/releases/latest) of the submod.
 
-2. The packages should be installed into your `DDLC/` folder. Exactly this folder, you should have `DDLC.exe` there.
+3. The packages should be installed into your `DDLC/` folder. Exactly this folder, you should have `DDLC.exe` there.
 
 ## Usage:
 **This part is for the developers that want to add support for this util to their submods, the actual end users do not need to do any manipulations - just install this submod.**
@@ -44,8 +44,8 @@ There're currently 8 additional parameters you can use:
 - `should_notify` - toggles if we should notify the user about updates for this submod. Default `True`.
 - `auto_check` - toggles if we should automatically check for updates. Default `True`.
 - `allow_updates` - toggles if we should allow the user to update the submod. Default `True`.
-- `submod_dir` - the **relative** file path to the directory of your submod. If `None` (default), the updater will try to locate your submod. But if it fails and you've not specified the path, the updater won't be able to download and install updates.
-- `update_dir` - directory where updates will be installed to. If `None` (default), the updater will set it to the submod directory, if empty string, updates will be installed in the base directory.
+- `submod_dir` - the **relative** file path to the directory of your submod. If `None` (default), the updater will try to locate your submod. But if it fails and you've not specified the dir, the updater might fail to download and install updates.
+- `update_dir` - directory where updates will be installed in. If `None` (default), the updater will set it to the submod directory, if empty string, updates will be installed in the base directory.
 - `extraction_depth` - depth of the recursion for the update extractor. Defaut `1` - updater will try to go one folder inside to unpack updates.
 - `attachment_id` - id of the attachment with updates on GitHub. If you attach only one file, it'd be `0`, if two, depending on the order it can be either `0` or `1`. And so on. Defaults to `0`. If `None`, the updater will download **the source files**. Note that GitHub doesn't support distributing releases that way. It will be noticeably slower to download and sometimes may fail to download at all. In short: use attachments.
 - `tag_formatter` - if not `None`, assuming it's a function that accepts version tag from github as a string, formats it in a way, and returns a new formatted tag as a string. Exceptions are auto-handled. If `None` (default), no formatting applies on version tags.
@@ -60,7 +60,7 @@ Some methods of the `SubmodUpdater` class you can work with.
 - `_checkUpdateInThread` runs `_checkUpdate` in a thread.
 - `toggleNotifs`, `toggleAutoChecking`, and `toggleUpdates` allows to easily toggle values of the corresponding properties of the updater.
 - `isUpdating` checks whether or not we're updating this submod now.
-- `hasUpdated` checks whether or not we updated this submod.
+- `hasUpdated` checks whether or not we've updated this submod.
 - `downloadUpdateInThread` allows you to download and install updates. This does not check for an update before downloading, and therefore will do nothing if you've not checked it before (or it wasn't done automatically).
 - `getDirectory` returns the path to the submod directory.
 - `getDirectoryFor` (class method) checks `getDirectory` for the given submod.
