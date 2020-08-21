@@ -827,7 +827,7 @@ init -991 python in sup_utils:
                 except Exception as e:
                     self.update_exception = SubmodUpdaterError("Failed to delete temp files: {0}".format(path), e)
 
-            def __do_progress_bar_logic():
+            def __do_bulk_progress_bar_logic():
                 """
                 Does logic for updating the progress bar for bulk downloads
                 """
@@ -856,7 +856,7 @@ init -991 python in sup_utils:
 
                     self.__updating = False
 
-                    __do_progress_bar_logic()
+                    __do_bulk_progress_bar_logic()
 
                     return False
 
@@ -868,7 +868,7 @@ init -991 python in sup_utils:
 
                     self.__updating = False
 
-                    __do_progress_bar_logic()
+                    __do_bulk_progress_bar_logic()
 
                     return False
 
@@ -886,7 +886,7 @@ init -991 python in sup_utils:
 
                             self.__updating = False
 
-                            __do_progress_bar_logic()
+                            __do_bulk_progress_bar_logic()
 
                             return False
 
@@ -941,7 +941,7 @@ init -991 python in sup_utils:
 
                     self.__updating = False
 
-                    __do_progress_bar_logic()
+                    __do_bulk_progress_bar_logic()
 
                     return False
 
@@ -971,10 +971,6 @@ init -991 python in sup_utils:
 
                         else:
                             request_attempts_left -= 1
-                            req_size_request = urllib2.Request(
-                                url=update_url,
-                                headers=req_size_headers
-                            )
                             if request_attempts_left > 0:
                                 time.sleep(1)
 
@@ -986,7 +982,7 @@ init -991 python in sup_utils:
 
                         self.__updating = False
 
-                        __do_progress_bar_logic()
+                        __do_bulk_progress_bar_logic()
 
                         return False
 
@@ -997,7 +993,7 @@ init -991 python in sup_utils:
 
                     self.__updating = False
 
-                    __do_progress_bar_logic()
+                    __do_bulk_progress_bar_logic()
 
                     return False
 
@@ -1053,7 +1049,7 @@ init -991 python in sup_utils:
 
                     self.__updating = False
 
-                    __do_progress_bar_logic()
+                    __do_bulk_progress_bar_logic()
 
                     return False
 
@@ -1070,7 +1066,7 @@ init -991 python in sup_utils:
 
                     self.__updating = False
 
-                    __do_progress_bar_logic()
+                    __do_bulk_progress_bar_logic()
 
                     return False
 
@@ -1109,7 +1105,7 @@ init -991 python in sup_utils:
                 self.__updating = False
                 self.__updated = True
 
-                __do_progress_bar_logic()
+                __do_bulk_progress_bar_logic()
 
                 return True
 
@@ -1205,8 +1201,8 @@ init -991 python in sup_utils:
             # We should use the lock to modify the list
             with cls.updateDownloadLock:
                 # Reset after the previous update
-                cls.queued_updaters = []
-                cls.finished_updaters = []
+                cls.queued_updaters[:] = []
+                cls.finished_updaters[:] = []
                 cls.bulk_progress_bar.reset()
 
                 for updater in updaters:
