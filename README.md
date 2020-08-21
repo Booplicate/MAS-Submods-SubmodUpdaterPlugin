@@ -6,6 +6,7 @@ A util submod that makes updating other submods easier. The util can automatical
 Currently known submods that support this util:
 - [YouTube Music](https://github.com/Booplicate/MAS-Submods-YouTubeMusic)
 - [Auto Atmos Change](https://github.com/multimokia/MAS-Submod-Auto-Atmos-Change/tree/master/game/Submods/Auto%20Weather%20Change)
+- [Night Music](https://github.com/multimokia/MAS-Submod-Nightmusic/tree/master/Night%20Music)
 
 ## Installation:
 1. Make sure you're running the latest version of MAS.

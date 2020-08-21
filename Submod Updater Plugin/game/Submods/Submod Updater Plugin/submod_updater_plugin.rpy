@@ -278,7 +278,6 @@ init -991 python in sup_utils:
                 raise SubmodUpdaterError(
                     "\"{0}\" is not a string, nor a Submod object.".format(submod)
                 )
-                return
 
             # ignore if the submod doesn't exist
             if submod_obj is None:
@@ -303,26 +302,9 @@ init -991 python in sup_utils:
             self.__repository_name = repository_name
 
             # Try to load settings from persistent
-            _persist_should_notify = persistent._sup_settings[self.id].get("should_notify", None)
-            if _persist_should_notify is not None:
-                self.should_notify = _persist_should_notify
-
-            else:
-                self.should_notify = should_notify
-
-            _persist_auto_check = persistent._sup_settings[self.id].get("auto_check", None)
-            if _persist_auto_check is not None:
-                self.auto_check = _persist_auto_check
-
-            else:
-                self.auto_check = auto_check
-
-            _persist_allow_updates = persistent._sup_settings[self.id].get("allow_updates", None)
-            if _persist_allow_updates is not None:
-                self.allow_updates = _persist_allow_updates
-
-            else:
-                self.allow_updates = allow_updates
+            self.should_notify = persistent._sup_settings[self.id].get("should_notify", should_notify)
+            self.auto_check = persistent._sup_settings[self.id].get("auto_check", auto_check)
+            self.allow_updates = persistent._sup_settings[self.id].get("allow_updates", allow_updates)
 
             self._submod_dir = submod_dir.replace("\\", "/") if submod_dir is not None else self.__getCurrentFilePath()
             self._update_dir = update_dir
