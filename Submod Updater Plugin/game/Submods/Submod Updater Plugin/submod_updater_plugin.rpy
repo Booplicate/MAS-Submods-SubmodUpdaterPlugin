@@ -214,7 +214,8 @@ init -991 python in sup_utils:
             update_dir=None,
             extraction_depth=1,
             attachment_id=0,
-            tag_formatter=None
+            tag_formatter=None,
+            redirected_files=None
         ):
             """
             Constructor
@@ -264,6 +265,13 @@ init -991 python in sup_utils:
                 tag_formatter = if not None, assuming it's a function that accepts version tag from github as a string, formats it in a way,
                     and returns a new formatted tag as a string. Exceptions are auto-handled. If None, no formatting applies on version tags
                     (Default: None)
+
+                redirected_files - a string or a list of strings with filenames that the updater will TRY to move to the submod dir during update.
+                    If the files don't exist or this's set to empty list/tuple, it will do nothing. If None this will be set to ("readme.md", "license.md", "changelog.md")
+                    NOTE: Case-insensitive
+                    NOTE: this's intended to work only on files, NOT folders
+                    NOTE: this requires submod_dir to have a non-None value during update
+                    (Default: None)
             """
             if isinstance(submod, basestring):
                 submod_name = submod
@@ -311,6 +319,23 @@ init -991 python in sup_utils:
             self._extraction_depth = extraction_depth
             self.__attachment_id = attachment_id
             self.__tag_formatter = tag_formatter
+
+            if redirected_files is None:
+                redirected_files = ("readme.md", "license.md", "changelog.md")
+
+            else:
+                if isinstance(redirected_files, basestring):
+                    redirected_files = [redirected_files]
+
+                elif isinstance(redirected_files, tuple):
+                    redirected_files = list(redirected_files)
+
+                for id, filename in enumerate(redirected_files):
+                    redirected_files[id] = filename.lower()
+
+                redirected_files = tuple(redirected_files)
+
+            self.__redirected_files = redirected_files
 
             self.__json_request = self.__buildJSONRequest()
             self._json = None
@@ -766,17 +791,41 @@ init -991 python in sup_utils:
                 OUT:
                     list of exceptions (it can be empty)
                 """
-                # list of exceptions we get during this call
+                # List of exceptions we get during this call
                 exceptions = []
-                # set the next depth
+                # Set the next depth
                 new_depth = depth - 1
+                # Save it for future uses
+                og_dst = dst
 
                 if os.path.isdir(srs):
                     for item in os.listdir(srs):
+                        # Set the new source path
                         new_srs = os.path.join(srs, item).replace("\\", "/")
-                        new_dst = os.path.join(dst, item).replace("\\", "/")
+                        # Check if we want to redirect this file
+                        if (
+                            self.__redirected_files is not None
+                            and self._submod_dir is not None
+                            and os.path.isfile(new_srs)
+                            and "python-packages" not in new_srs
+                            and item.lower() in self.__redirected_files
+                        ):
+                            dst = os.path.join(
+                                self.GAME_DIRECTORY,
+                                self._submod_dir.lstrip("/")
+                            ).replace("\\", "/")
 
-                        # should we go deeper?
+                            new_dst = os.path.join(
+                                self.GAME_DIRECTORY,
+                                self._submod_dir.lstrip("/"),
+                                item
+                            ).replace("\\", "/")
+
+                        else:
+                            dst = og_dst
+                            new_dst = os.path.join(dst, item).replace("\\", "/")
+
+                        # Should we go deeper?
                         if (
                             depth > 0
                             and os.path.isdir(new_srs)
@@ -784,14 +833,14 @@ init -991 python in sup_utils:
                             rv = __extract_files(new_srs, dst, new_depth)
                             exceptions += rv
 
-                        # or just extract as is
+                        # Or just extract as is
                         else:
-                            # the dir already exists, have to use recursion
+                            # The dir already exists, have to use recursion
                             if os.path.isdir(new_dst):
                                 rv = __extract_files(new_srs, new_dst, 0)
                                 exceptions += rv
 
-                            # the file exists, have to delete it first
+                            # The file exists, have to delete it first
                             elif os.path.isfile(new_dst):
                                 try:
                                     os.remove(new_dst)
@@ -800,7 +849,7 @@ init -991 python in sup_utils:
                                 except Exception as e:
                                     exceptions.append(str(e))
 
-                            # simply move it
+                            # Simply move it
                             else:
                                 try:
                                     shutil.move(new_srs, dst)
@@ -971,8 +1020,13 @@ init -991 python in sup_utils:
 
                         else:
                             request_attempts_left -= 1
+                            # Not sure why, but we do need to make a new request object
+                            req_size_request = urllib2.Request(
+                                url=update_url,
+                                headers=req_size_headers
+                            )
                             if request_attempts_left > 0:
-                                time.sleep(1)
+                                time.sleep(1.5)
 
                     # I give 10 attempts, if we fail, we fail. Blame GitHub.
                     if update_size is None:

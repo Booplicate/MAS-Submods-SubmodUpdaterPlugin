@@ -41,7 +41,7 @@ init -989 python:
 ```
 Alternatively, you can pass in the `Submod` object itself instead of its name. Whatever you feel would suit your needs!
 
-There're currently 8 additional parameters you can use:
+There're currently 9 additional parameters you can use:
 - `should_notify` - toggles if we should notify the user about updates for this submod. Default `True`.
 - `auto_check` - toggles if we should automatically check for updates. Default `True`.
 - `allow_updates` - toggles if we should allow the user to update the submod. Default `True`.
@@ -50,6 +50,7 @@ There're currently 8 additional parameters you can use:
 - `extraction_depth` - depth of the recursion for the update extractor. Defaut `1` - updater will try to go one folder inside to unpack updates.
 - `attachment_id` - id of the attachment with updates on GitHub. If you attach only one file, it'd be `0`, if two, depending on the order it can be either `0` or `1`. And so on. Defaults to `0`. If `None`, the updater will download **the source files**. Note that GitHub doesn't support distributing releases that way. It will be noticeably slower to download and sometimes may fail to download at all. In short: use attachments.
 - `tag_formatter` - if not `None`, assuming it's a function that accepts version tag from github as a string, formats it in a way, and returns a new formatted tag as a string. Exceptions are auto-handled. If `None` (default), no formatting applies on version tags.
+- `redirected_files` - a string or a list of strings with filenames that the updater will *try* to move to the submod dir during update. If the files don't exist or this's set to empty list/tuple, it will do nothing. If None this will be set to a tuple of 3 items: `("readme.md", "license.md", "changelog.md")`. Default `None`. This's case-insensitive.
 
 Define your updater at init level `-989`, **after** you defined the submod.
 The `store.mas_submod_utils.isSubmodInstalled("Submod Updater Plugin")` check is optional, but it'll allow you to support both versions of your submod: with the updater and without it. On a side note, if you don't do that check and you need to define the updater earlier for some reason, you can init your updater at `-990`.
