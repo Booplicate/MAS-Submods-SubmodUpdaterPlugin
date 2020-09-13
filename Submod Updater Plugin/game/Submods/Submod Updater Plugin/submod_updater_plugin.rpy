@@ -1684,19 +1684,19 @@ screen sup_setting_pane():
         style_prefix "check"
 
         if total_updaters > 0:
-            textbutton "{b}Change settings{/b}":
+            textbutton "{b}Adjust settings{/b}":
                 ypos 1
                 selected False
                 action Show("sup_settings")
 
         if store.sup_utils.SubmodUpdater.hasOutdatedSubmods():
-            textbutton "{b}Read more about new updates{/b}":
+            textbutton "{b}Select a submod to update{/b}":
                 ypos 1
                 selected False
                 action Show("sup_available_updates")
 
             if total_updatable_submod_updaters > 0:
-                textbutton "{b}Update all submods now!{/b}":
+                textbutton "{b}Update all submods that have available updates{/b}":
                     ypos 1
                     selected False
                     action Show(
