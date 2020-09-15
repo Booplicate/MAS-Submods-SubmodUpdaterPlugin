@@ -3,17 +3,24 @@
 
 A util submod that makes updating other submods easier. The util can automatically check updates for installed (and [registered](https://github.com/Booplicate/MAS-Submods-SubmodUpdaterPlugin#usage)) submods, notify the user about those updates, and even download and install them.
 
-Currently known submods that support this util:
-- [YouTube Music](https://github.com/Booplicate/MAS-Submods-YouTubeMusic)
-- [Auto Atmos Change](https://github.com/multimokia/MAS-Submod-Auto-Atmos-Change/tree/master/game/Submods/Auto%20Weather%20Change)
-- [Night Music](https://github.com/multimokia/MAS-Submod-Nightmusic/tree/master/Night%20Music)
-
 ## Installation:
 1. Make sure you're running the latest version of MAS.
 
 2. Download [the latest release](https://github.com/Booplicate/MAS-Submods-SubmodUpdaterPlugin/releases/latest) of the submod.
 
 3. The packages should be installed into your `DDLC/` folder. Exactly this folder, you should have `DDLC.exe` there.
+
+## Currently known submods that use this util:
+- [YouTube Music](https://github.com/Booplicate/MAS-Submods-YouTubeMusic)
+- [All Scrollable Menus](https://github.com/multimokia/MAS-Submod-consistent-menus)
+- [Auto Atmos Change](https://github.com/multimokia/MAS-Submod-Auto-Atmos-Change)
+- [Auto Outfit Change](https://github.com/multimokia/MAS-Submod-Auto-Outfit-Change)
+- [Better Loading](https://github.com/multimokia/MAS-Util-Better-Loading) (also a util submod)
+- [Enhanced Idle](https://github.com/multimokia/MAS-Submod-Enhanced-Idle)
+- [English Localization Settings](https://github.com/multimokia/MAS-Submod-English-Localization-Settings)
+- [Font Change](https://github.com/multimokia/MAS-Submod-Font-Change)
+- [Night Music](https://github.com/multimokia/MAS-Submod-Nightmusic)
+- [Room Selection Pack](https://github.com/tw4449/tw4449-Custom-Room-Selection-Pack-Main-Repository/blob/master/README.md)
 
 ## Usage:
 **This part is for the developers that want to add support for this util to their submods, the actual end users do not need to do any manipulations - just install this submod.**
