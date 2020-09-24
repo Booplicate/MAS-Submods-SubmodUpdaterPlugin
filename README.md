@@ -46,7 +46,7 @@ init -989 python:
             repository_name="Name_of_the_Repository_for_Your_Submod"
         )
 ```
-Alternatively, you can pass in the `Submod` object itself instead of its name. Whatever you feel would suit your needs!
+Alternatively, you can pass in the `Submod` object itself instead of its name. Whatever you feel would suit your needs! Also make sure that the name of the file you're defining your submod in is **unique**! For example you can use the name of your submod for it.
 
 There're currently 9 additional parameters you can use:
 - `should_notify` - toggles if we should notify the user about updates for this submod. Default `True`.
@@ -70,6 +70,7 @@ Some methods of the `SubmodUpdater` class you can work with.
 - `toggleNotifs`, `toggleAutoChecking`, and `toggleUpdates` allows to easily toggle values of the corresponding properties of the updater.
 - `isUpdating` checks whether or not we're updating this submod now.
 - `hasUpdated` checks whether or not we've updated this submod.
+- `isInBetaVersion` checks if the user's using a beta version of the submod.
 - `downloadUpdateInThread` allows you to download and install updates. This does not check for an update before downloading, and therefore will do nothing if you've not checked it before (or it wasn't done automatically).
 - `getDirectory` returns the path to the submod directory.
 - `getDirectoryFor` (class method) checks `getDirectory` for the given submod.
@@ -86,7 +87,6 @@ Rarely used methods.
 - `isUpdatingAny` (class method) returns boolean whether or not we're updating a submod.
 - `isBulkUpdating` (class method) Returns boolean whether or not we have an ongoing bulk update.
 - `_notify` (class method) notifies the user about all available updates at once (if the appropriate updater has the `should_notify` property set to `True`).
-- `getIcon` (class method) returns an appropriate icon depending on the state of a submod (has update/currently updating).
 
 Properties to access (only `get`) json data. These 5 can be `None` as a fallback, keep that in mind.
 - `latest_version` - the latest version of the submod available.
