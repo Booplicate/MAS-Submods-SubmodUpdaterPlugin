@@ -201,6 +201,74 @@ init -991 python in sup_utils:
 
         FOLDER_NAME_PATTERN = re.compile(r"[^a-zA-Z0-9_]")
 
+        # NOTE: the order IS important
+        MD_TAGS_PATTERN = re.compile(
+            r"""
+                ((?<![\!\[(\\])\[[\w\d\s.,;:!?@#№$%^&*=+\-|/\\'\"()[\]]+?\]\([\w\d.:/-]+?\)) # Pattern for links
+                |
+                (?m)(?<!\\)^[ ]{0,3}\#{1,6}\s+[\S\s]+?[\n] # Pattern for heading
+                |
+                (?<!\\)\B\*{3}\S+?[\w\d\s]*?\s*?(?:(?<=\s)\S+?|(?<!\s)\S*?)\*{3}\B # Pattern for bold italic text
+                |
+                (?<!\\)\B\*{2}\S+?[\w\d\s]*?\s*?(?:(?<=\s)\S+?|(?<!\s)\S*?)\*{2}\B # Pattern for bold text via asterisk
+                |
+                (?<!\\)\b_{2}\S+?[\w\d\s]*?\s*?(?:(?<=\s)\S+?|(?<!\s)\S*?)_{2}\b # Pattern for bold text via underline
+                |
+                (?<!\\)\B\*\S+?[\w\d\s]*?\s*?(?:(?<=\s)\S+?|(?<!\s)\S*?)\*\B # Pattern for italic via asterisk
+                |
+                (?<!\\)\b_\S+?[\w\d\s]*?\s*?(?:(?<=\s)\S+?|(?<!\s)\S*?)_\b # Pattern for italic via underline
+                |
+                (?<!\\)\B~{2}\S+?[\w\d\s]*?\s*?(?:(?<=\s)\S+?|(?<!\s)\S*?)~{2}\B # Pattern for strikethrough text
+                |
+                (?m)(?<!\\)^>\s+?[\S\s]+?[\n] # Pattern for quotes
+            """,
+            flags=re.IGNORECASE | re.VERBOSE
+        )
+        MD_LINK_TAG_PATTERN = re.compile(
+            r"(?<![\!\[(\\])\[([\w\d\s.,;:!?@#№$%^&*=+\-|/\\'\"()[\]]+?)\]\(([\w\d.:/-]+?)\)",
+            flags=re.IGNORECASE
+        )
+        MD_HEADING_TAG_PATTERN = re.compile(
+            r"(?<!\\)^[ ]{0,3}(#{1,6})\s+([\S\s]+?)([\n])",
+            flags=re.IGNORECASE | re.UNICODE | re.MULTILINE
+        )
+        MD_BOLD_ITALIC_TAG_PATTERN = re.compile(
+            r"(?<!\\)\B\*{3}(\S+?[\w\d\s]*?\s*?(?:(?<=\s)\S+?|(?<!\s)\S*?))\*{3}\B",
+            flags=re.IGNORECASE | re.UNICODE
+        )
+        MD_BOLD_ASTERISK_TAG_PATTERN = re.compile(
+            r"(?<!\\)\B\*{2}(\S+?[\w\d\s]*?\s*?(?:(?<=\s)\S+?|(?<!\s)\S*?))\*{2}\B",
+            flags=re.IGNORECASE | re.UNICODE
+        )
+        MD_BOLD_UNDERLINE_TAG_PATTERN = re.compile(
+            r"(?<!\\)\b_{2}(\S+?[\w\d\s]*?\s*?(?:(?<=\s)\S+?|(?<!\s)\S*?))_{2}\b",
+            flags=re.IGNORECASE | re.UNICODE
+        )
+        MD_ITALIC_ASTERISK_TAG_PATTERN = re.compile(
+            r"(?<!\\)\B\*(\S+?[\w\d\s]*?\s*?(?:(?<=\s)\S+?|(?<!\s)\S*?))\*\B",
+            flags=re.IGNORECASE | re.UNICODE
+        )
+        MD_ITALIC_UNDERLINE_TAG_PATTERN = re.compile(
+            r"(?<!\\)\b_(\S+?[\w\d\s]*?\s*?(?:(?<=\s)\S+?|(?<!\s)\S*?))_\b",
+            flags=re.IGNORECASE | re.UNICODE
+        )
+        MD_STRIKETHROUGH_TAG_PATTERN = re.compile(
+            r"(?<!\\)\B~{2}(\S+?[\w\d\s]*?\s*?(?:(?<=\s)\S+?|(?<!\s)\S*?))~{2}\B",
+            flags=re.IGNORECASE | re.UNICODE
+        )
+        MD_QUOTING_TAG_PATTERN = re.compile(
+            r"(?<!\\)(^>\s+?)([\S\s]+?)([\n])",
+            flags=re.IGNORECASE | re.UNICODE | re.MULTILINE
+        )
+        HEADING_SIZE_MAP = {
+            1: "6",
+            2: "+4",
+            3: "+2",
+            4: "0",
+            5: "-2",
+            6: "-4"
+        }
+
         # html codes
         OK_CODE = 200
         RATE_LIMIT_CODE = 403
@@ -607,7 +675,12 @@ init -991 python in sup_utils:
                 update_changelog = ""
 
             else:
-                update_changelog = update_changelog.replace("[", "[[").replace("{", "{{")
+                try:
+                    update_changelog = update_changelog.replace("{", "{{")
+                    update_changelog = SubmodUpdater.formatMDtoRenPy(update_changelog)
+                    update_changelog = update_changelog.replace("[", "[[")
+                except Exception as e:
+                    SubmodUpdaterError("big oof.", submod=self.id, e=e)
 
             update_page_url = json_data.get("html_url", None)
             if update_page_url is None:
@@ -1616,7 +1689,7 @@ init -991 python in sup_utils:
                 submod_name - name of the submod to get img for
 
             OUT:
-                Image object, or None if the submod doesn't exist
+                Image object (may return None if coulnd find the img, but this shouldn't happen)
             """
             updater = cls.getUpdater(submod_name)
             img_key = ("sup_indicator_no_update",)
@@ -1665,9 +1738,112 @@ init -991 python in sup_utils:
                     tooltip = "Update available!"
 
                 elif update_state > 0:
-                    tooltip = "Warning! You're using the UNTESTED version!"
+                    tooltip = "WARNING! You're using the UNTESTED version!"
 
             return tooltip
+
+        @classmethod
+        def formatMDtoRenPy(cls, text):
+            """
+            The most disgusting method here, parses text and replaces some MD tags with RenPy ones.
+            NOTE: handles only SOME tags
+
+            IN:
+                text - text to parse
+
+            OUT:
+                string with replaced tags
+            """
+            def main_tag_parser(match):
+                """
+                Parser for a single tag
+
+                IN:
+                    match - MatchObject
+
+                OUT:
+                    string with the parsed tag
+
+                ASSUMES:
+                    match is NOT None
+                """
+                match_string = match.group()
+                match_string = match_string.lstrip(" ")
+
+                # Exactly in this order
+                if match_string.startswith("["):
+                    match_string = re.sub(cls.MD_LINK_TAG_PATTERN, r"{a=\g<2>}{i}{u}\g<1>{/u}{/i}{/a}", match_string)
+
+                elif match_string.startswith("#"):
+                    subbed_string = re.sub(cls.MD_HEADING_TAG_PATTERN, r"\g<1>{{size={0}}}{{b}}\g<2>{{/b}}{{/size}}\g<3>", match_string)
+                    base_string = subbed_string.lstrip("#")
+                    heading_size = cls.HEADING_SIZE_MAP.get(len(subbed_string) - len(base_string), 0)
+                    match_string = base_string.format(heading_size)
+
+                elif match_string.startswith("***"):
+                    match_string = re.sub(cls.MD_BOLD_ITALIC_TAG_PATTERN, r"{b}{i}\g<1>{/i}{/b}", match_string)
+
+                elif match_string.startswith("**"):
+                    match_string = re.sub(cls.MD_BOLD_ASTERISK_TAG_PATTERN, r"{b}\g<1>{/b}", match_string)
+
+                elif match_string.startswith("__"):
+                    match_string = re.sub(cls.MD_BOLD_UNDERLINE_TAG_PATTERN, r"{b}\g<1>{/b}", match_string)
+
+                elif match_string.startswith("*"):
+                    match_string = re.sub(cls.MD_ITALIC_ASTERISK_TAG_PATTERN, r"{i}\g<1>{/i}", match_string)
+
+                elif match_string.startswith("_"):
+                    match_string = re.sub(cls.MD_ITALIC_UNDERLINE_TAG_PATTERN, r"{i}\g<1>{/i}", match_string)
+
+                elif match_string.startswith("~~"):
+                    match_string = re.sub(cls.MD_STRIKETHROUGH_TAG_PATTERN, r"{s}\g<1>{/s}", match_string)
+
+                elif match_string.startswith(">"):
+                    match_string = re.sub(cls.MD_QUOTING_TAG_PATTERN, r"\g<1>{color=#63605f}'\g<2>'{/color}\g<3>", match_string)
+
+                return match_string
+
+            def repeated_tag_parser(match):
+                """
+                Parser for a single tag
+
+                IN:
+                    match - MatchObject
+
+                OUT:
+                    string with the parsed tag
+
+                ASSUMES:
+                    match is NOT None
+                """
+                match_string = match.group()
+                match_string = match_string.lstrip(" ")
+
+                # Exactly in this order
+                if match_string.startswith("***"):
+                    match_string = re.sub(cls.MD_BOLD_ITALIC_TAG_PATTERN, r"{b}{i}\g<1>{/i}{/b}", match_string)
+
+                elif match_string.startswith("**"):
+                    match_string = re.sub(cls.MD_BOLD_ASTERISK_TAG_PATTERN, r"{b}\g<1>{/b}", match_string)
+
+                elif match_string.startswith("__"):
+                    match_string = re.sub(cls.MD_BOLD_UNDERLINE_TAG_PATTERN, r"{b}\g<1>{/b}", match_string)
+
+                elif match_string.startswith("*"):
+                    match_string = re.sub(cls.MD_ITALIC_ASTERISK_TAG_PATTERN, r"{i}\g<1>{/i}", match_string)
+
+                elif match_string.startswith("_"):
+                    match_string = re.sub(cls.MD_ITALIC_UNDERLINE_TAG_PATTERN, r"{i}\g<1>{/i}", match_string)
+
+                elif match_string.startswith("~~"):
+                    match_string = re.sub(cls.MD_STRIKETHROUGH_TAG_PATTERN, r"{s}\g<1>{/s}", match_string)
+
+                return match_string
+
+            text = re.sub(cls.MD_TAGS_PATTERN, main_tag_parser, text)
+            text = re.sub(cls.MD_TAGS_PATTERN, repeated_tag_parser, text)
+
+            return text
 
         @staticmethod
         def openURL(url):
