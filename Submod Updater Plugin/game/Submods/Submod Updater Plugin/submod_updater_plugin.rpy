@@ -204,9 +204,9 @@ init -991 python in sup_utils:
         # NOTE: the order IS important
         MD_TAGS_PATTERN = re.compile(
             r"""
-                ((?<![\!\[(\\])\[[\w\d\s.,;:!?@#№$%^&*=+\-|/\\'\"()[\]]+?\]\([\w\d.:/-]+?\)) # Pattern for links
+                (?<![\!\[(\\])\[[\S\s]+?\]\([\w\d.:/-]+?\) # Pattern for links
                 |
-                (?m)(?<!\\)^[ ]{0,3}\#{1,6}\s+[\S\s]+?[\n] # Pattern for heading
+                (?m)(?<!\\)^[ ]{0,3}\#{1,6}\s+[\S\s]+?(?:\n|$) # Pattern for heading
                 |
                 (?<!\\)\B\*{3}\S+?[\w\d\s]*?\s*?(?:(?<=\s)\S+?|(?<!\s)\S*?)\*{3}\B # Pattern for bold italic text
                 |
@@ -225,11 +225,11 @@ init -991 python in sup_utils:
             flags=re.IGNORECASE | re.VERBOSE
         )
         MD_LINK_TAG_PATTERN = re.compile(
-            r"(?<![\!\[(\\])\[([\w\d\s.,;:!?@#№$%^&*=+\-|/\\'\"()[\]]+?)\]\(([\w\d.:/-]+?)\)",
+            r"(?<![\!\[(\\])\[([\S\s]+?)\]\(([\w\d.:/-]+?)\)",
             flags=re.IGNORECASE
         )
         MD_HEADING_TAG_PATTERN = re.compile(
-            r"(?<!\\)^[ ]{0,3}(#{1,6})\s+([\S\s]+?)([\n])",
+            r"(?<!\\)^[ ]{0,3}(#{1,6})\s+([\S\s]+?)(\n|$)",
             flags=re.IGNORECASE | re.UNICODE | re.MULTILINE
         )
         MD_BOLD_ITALIC_TAG_PATTERN = re.compile(
@@ -261,10 +261,10 @@ init -991 python in sup_utils:
             flags=re.IGNORECASE | re.UNICODE | re.MULTILINE
         )
         HEADING_SIZE_MAP = {
-            1: "6",
+            1: "+6",
             2: "+4",
             3: "+2",
-            4: "0",
+            4: "+0",
             5: "-2",
             6: "-4"
         }
@@ -675,12 +675,9 @@ init -991 python in sup_utils:
                 update_changelog = ""
 
             else:
-                try:
-                    update_changelog = update_changelog.replace("{", "{{")
-                    update_changelog = SubmodUpdater.formatMDtoRenPy(update_changelog)
-                    update_changelog = update_changelog.replace("[", "[[")
-                except Exception as e:
-                    SubmodUpdaterError("big oof.", submod=self.id, e=e)
+                update_changelog = update_changelog.replace("{", "{{")
+                update_changelog = SubmodUpdater.formatMDtoRenPy(update_changelog)
+                update_changelog = update_changelog.replace("[", "[[")
 
             update_page_url = json_data.get("html_url", None)
             if update_page_url is None:
@@ -1777,7 +1774,7 @@ init -991 python in sup_utils:
                 elif match_string.startswith("#"):
                     subbed_string = re.sub(cls.MD_HEADING_TAG_PATTERN, r"\g<1>{{size={0}}}{{b}}\g<2>{{/b}}{{/size}}\g<3>", match_string)
                     base_string = subbed_string.lstrip("#")
-                    heading_size = cls.HEADING_SIZE_MAP.get(len(subbed_string) - len(base_string), 0)
+                    heading_size = cls.HEADING_SIZE_MAP.get(len(subbed_string) - len(base_string), "+0")
                     match_string = base_string.format(heading_size)
 
                 elif match_string.startswith("***"):
@@ -1840,8 +1837,17 @@ init -991 python in sup_utils:
 
                 return match_string
 
-            text = re.sub(cls.MD_TAGS_PATTERN, main_tag_parser, text)
-            text = re.sub(cls.MD_TAGS_PATTERN, repeated_tag_parser, text)
+            try:
+                text = re.sub(cls.MD_TAGS_PATTERN, main_tag_parser, text)
+
+            except Exception as e:
+                SubmodUpdaterError("Failed to parse update changelog with the main parser.", submod=self.id, e=e)
+
+            try:
+                text = re.sub(cls.MD_TAGS_PATTERN, repeated_tag_parser, text)
+
+            except Exception as e:
+                SubmodUpdaterError("Failed to parse update changelog with the second parser.", submod=self.id, e=e)
 
             return text
 
