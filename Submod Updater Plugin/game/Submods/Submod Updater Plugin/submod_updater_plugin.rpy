@@ -689,10 +689,16 @@ init -991 python in sup_utils:
 
                 if assets is not None:
                     try:
-                        update_package_url = assets[self.__attachment_id].get("browser_download_url", None)
+                        attachment = assets[self.__attachment_id]
 
                     except IndexError:
                         SubmodUpdaterError("Failed to parse JSON data: attachment with id '{0}' doesn't exist.".format(self.__attachment_id), submod=self.id)
+
+                    else:
+                        update_package_url = attachment.get("browser_download_url", None)
+
+                        if update_package_url is None:
+                            SubmodUpdaterError("Failed to parse JSON data: GitHub didn't provide the download link for the attachment.", submod=self.id)
 
                 else:
                     SubmodUpdaterError("Failed to parse JSON data: missing the 'assets' field.", submod=self.id)
@@ -1077,7 +1083,7 @@ init -991 python in sup_utils:
                     self._json is None
                     or self._json["update_package_url"] is None
                 ):
-                    self.update_exception = SubmodUpdaterError("Missing update JSON data.", submod=self.id)
+                    self.update_exception = SubmodUpdaterError("Missing update JSON data, or update url is incorrect.", submod=self.id)
 
                     self.__updating = False
 
@@ -1298,7 +1304,7 @@ init -991 python in sup_utils:
                 # even if we fail here, it's too late to abort now
                 # but we can log exceptions
                 if exceptions:
-                    SubmodUpdaterError("Failed to move update files. Submod: {0}. Exceptions:\n{0}".format(self.id, "\n - ".join(exceptions)))
+                    SubmodUpdaterError("Failed to move update files. Submod: {0}. Exceptions:\n{1}".format(self.id, "\n - ".join(exceptions)))
 
                     # self.__delete_update_files(temp_files_dir)
 
@@ -1800,7 +1806,7 @@ init -991 python in sup_utils:
 
                 return match_string
 
-            def repeated_tag_parser(match):
+            def second_tag_parser(match):
                 """
                 Parser for a single tag
 
@@ -1841,13 +1847,13 @@ init -991 python in sup_utils:
                 text = re.sub(cls.MD_TAGS_PATTERN, main_tag_parser, text)
 
             except Exception as e:
-                SubmodUpdaterError("Failed to parse update changelog with the main parser.", submod=self.id, e=e)
+                SubmodUpdaterError("Failed to parse update changelog using the main parser.", submod=self.id, e=e)
 
             try:
-                text = re.sub(cls.MD_TAGS_PATTERN, repeated_tag_parser, text)
+                text = re.sub(cls.MD_TAGS_PATTERN, second_tag_parser, text)
 
             except Exception as e:
-                SubmodUpdaterError("Failed to parse update changelog with the second parser.", submod=self.id, e=e)
+                SubmodUpdaterError("Failed to parse update changelog using the second parser.", submod=self.id, e=e)
 
             return text
 
