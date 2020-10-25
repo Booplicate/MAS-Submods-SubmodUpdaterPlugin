@@ -8,7 +8,7 @@ init -990 python:
             "A util submod that adds an in-game updater for other submods. "
             "Check {a=https://github.com/Booplicate/MAS-Submods-SubmodUpdaterPlugin}{i}{u}here{/u}{/i}{/a} if you want your submod to use this."
         ),
-        version="1.4.1",#TODO: change version back to 2 numbers long
+        version="1.5",
         settings_pane="sup_setting_pane"
     )
 
