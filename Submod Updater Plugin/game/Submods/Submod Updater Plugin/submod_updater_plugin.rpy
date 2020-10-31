@@ -199,7 +199,7 @@ init -991 python in sup_utils:
         LEFT_BAR = "/left_bar.png"
         RIGHT_BAR = "/right_bar.png"
 
-        FOLDER_NAME_PATTERN = re.compile(r"[^a-zA-Z0-9_]")
+        # FOLDER_NAME_PATTERN = re.compile(r"[^a-zA-Z0-9_]")
 
         # NOTE: the order IS important
         MD_TAGS_PATTERN = re.compile(
@@ -1132,11 +1132,7 @@ init -991 python in sup_utils:
                             update_dir.lstrip("/")# strip just in case
                         ).replace("\\", "/")
 
-                # if temp_folder_name is None:
-                temp_folder_name = "temp_{0}_{1}".format(
-                    re.sub(self.FOLDER_NAME_PATTERN, "_", self.id).lower(),
-                    int(time.time())
-                )
+                temp_folder_name = "temp_{0}".format(int(time.time()))
 
                 temp_files_dir = os.path.join(
                     self.GAME_DIRECTORY,
