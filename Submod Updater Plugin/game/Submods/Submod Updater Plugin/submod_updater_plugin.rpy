@@ -8,7 +8,7 @@ init -990 python:
             "A util submod that adds an in-game updater for other submods. "
             "Check {a=https://github.com/Booplicate/MAS-Submods-SubmodUpdaterPlugin}{i}{u}here{/u}{/i}{/a} if you want your submod to use this."
         ),
-        version="1.5",
+        version="1.6",
         settings_pane="sup_setting_pane"
     )
 
@@ -280,6 +280,9 @@ init -991 python in sup_utils:
         queued_updaters = list()
         # a list of updaters resently finished updating
         finished_updaters = list()
+
+        # Flag whether or not we're checking updates for submods (using _checkUpdates)
+        is_checking_updates = False
 
         def __init__(
             self,
@@ -1582,9 +1585,11 @@ init -991 python in sup_utils:
             """
             Check updates for each registered submods
             """
+            cls.is_checking_updates = True
             for updater in cls.registered_updaters.itervalues():
                 if updater.auto_check:
                     updater._checkUpdate()
+            cls.is_checking_updates = False
 
         @classmethod
         def _doLogic(cls, check_updates=True, notify=True):
@@ -1969,6 +1974,12 @@ screen sup_setting_pane():
         xfill True
         style_prefix "check"
 
+        textbutton "{b}Check updates{/b}":
+            ypos 1
+            selected False
+            sensitive (not store.sup_utils.SubmodUpdater.is_checking_updates)
+            action Function(store.sup_utils.SubmodUpdater.doLogicInThread, check_updates=True, notify=False)
+
         if total_updaters > 0:
             textbutton "{b}Adjust settings{/b}":
                 ypos 1
@@ -1990,6 +2001,11 @@ screen sup_setting_pane():
                         submod_updaters=updatable_submod_updaters,
                         from_submod_screen=True
                     )
+
+        if store.sup_utils.SubmodUpdater.is_checking_updates:
+            timer 1.0:
+                repeat True
+                action Function(renpy.restart_interaction)
 
 # # # A screen to change updaters' settings
 screen sup_settings():
