@@ -70,7 +70,7 @@ init -991 python in sup_utils:
 
         _text = "[SUBMOD UPDATER PLUGIN{0}]: {1}{2}{3}\n".format(message_type, msg, formatted_submod_name, formatted_e)
 
-        mas_utils.writelog(_text)
+        mas_submod_utils.writeLog(_text)
 
     # # # SUPPROGRESSBAR CLASS
     class SUPProgressBar(AnimatedValue):
