@@ -1283,15 +1283,40 @@ init -991 python in sup_utils:
                         update_file.extractall(temp_files_dir)
 
                 except Exception as e:
-                    self.update_exception = SubmodUpdaterError("Failed to extract update.", submod=self.id, e=e)
+                    should_exit = True
+                    # If this is an exception about fps lenght on windows,
+                    # we can try to handle it
+                    if (
+                        isinstance(e, IOError)
+                        and e.errno == 2
+                        and renpy.windows
+                    ):
+                        try:
+                            # Just in case clean this up
+                            self.__delete_update_files(temp_files_dir)
+                            # Handle the fp
+                            temp_files_dir = "\\\\?\\" + temp_files_dir
+                            # Try to unzip again
+                            with ZipFile(temp_file, "r") as update_file:
+                                update_file.extractall(temp_files_dir)
 
-                    self.__delete_update_files(temp_files_dir)
+                        except:
+                            pass
 
-                    self.__updating = False
+                        # If we were able to extract, we continue
+                        else:
+                            should_exit = False
 
-                    self.__do_bulk_progress_bar_logic()
+                    if should_exit:
+                        self.update_exception = SubmodUpdaterError("Failed to extract update.", submod=self.id, e=e)
 
-                    return False
+                        self.__delete_update_files(temp_files_dir)
+
+                        self.__updating = False
+
+                        self.__do_bulk_progress_bar_logic()
+
+                        return False
 
                 # delete update.zip
                 # even if it fails, it's not so bad, we can continue updating
