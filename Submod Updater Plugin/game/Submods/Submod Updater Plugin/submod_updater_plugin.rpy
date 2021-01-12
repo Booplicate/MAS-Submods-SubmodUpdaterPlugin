@@ -1223,7 +1223,7 @@ init -991 python in sup_utils:
                 # # # Prep for updating
                 bytes_downloaded = 0
                 bottom_bracket = 0
-                top_bracket = self.REQUEST_CHUNK
+                top_bracket = min(self.REQUEST_CHUNK, update_size)
                 downloading_headers = dict(self.HEADERS)
                 downloading_headers.update(
                     {
@@ -1260,7 +1260,7 @@ init -991 python in sup_utils:
                                 and bytes_downloaded != update_size
                             ):
                                 bottom_bracket = top_bracket
-                                top_bracket += self.REQUEST_CHUNK
+                                top_bracket += min(self.REQUEST_CHUNK, max(update_size-bytes_downloaded, 1))
                                 downloading_headers["Range"] = "bytes={0}-{1}".format(bottom_bracket, top_bracket)
                                 update_request = urllib2.Request(url=update_url, headers=downloading_headers)
                                 response = urllib2.urlopen(update_request, timeout=self.TIMEOUT)
@@ -1295,7 +1295,7 @@ init -991 python in sup_utils:
                             # Just in case clean this up
                             self.__delete_update_files(temp_files_dir)
                             # Handle the fp
-                            temp_files_dir = "\\\\?\\" + temp_files_dir
+                            temp_files_dir = "\\\\?\\" + os.path.normpath(temp_files_dir)
                             # Try to unzip again
                             with ZipFile(temp_file, "r") as update_file:
                                 update_file.extractall(temp_files_dir)
@@ -2456,6 +2456,7 @@ screen sup_single_update_screen(submod_updater):
                         xalign 0.5
                         xysize (400, 25)
                         value store.sup_utils.SubmodUpdater.single_progress_bar
+                        thumb None
                         left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", False) + store.sup_utils.SubmodUpdater.LEFT_BAR, 2, 2)
                         right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", False) + store.sup_utils.SubmodUpdater.RIGHT_BAR, 2, 2)
                         right_gutter 1
@@ -2467,7 +2468,7 @@ screen sup_single_update_screen(submod_updater):
 
             else:
                 if submod_updater.update_exception is not None:
-                    text "An error has occurred during updating. Check the log for details.":
+                    text "An error has occurred during updating. Check 'submod_log.txt' for details.":
                         align (0.5, 0.2)
                         text_align 0.5
 
@@ -2538,7 +2539,8 @@ screen sup_bulk_update_screen(submod_updaters, from_submod_screen=False):
                 bar:
                     xalign 0.5
                     xysize (400, 25)
-                    value store.sup_utils.SubmodUpdater.bulk_progress_bar# This's handled inside SubmodUpdater
+                    value store.sup_utils.SubmodUpdater.bulk_progress_bar
+                    thumb None
                     left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", False) + store.sup_utils.SubmodUpdater.LEFT_BAR, 2, 2)
                     right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", False) + store.sup_utils.SubmodUpdater.RIGHT_BAR, 2, 2)
                     right_gutter 1
@@ -2553,7 +2555,8 @@ screen sup_bulk_update_screen(submod_updaters, from_submod_screen=False):
                 bar:
                     xalign 0.5
                     xysize (400, 25)
-                    value store.sup_utils.SubmodUpdater.single_progress_bar# This's handled inside SubmodUpdater
+                    value store.sup_utils.SubmodUpdater.single_progress_bar
+                    thumb None
                     left_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", False) + store.sup_utils.SubmodUpdater.LEFT_BAR, 2, 2)
                     right_bar Frame(store.sup_utils.SubmodUpdater.getDirectoryFor("Submod Updater Plugin", False) + store.sup_utils.SubmodUpdater.RIGHT_BAR, 2, 2)
                     right_gutter 1
@@ -2570,7 +2573,7 @@ screen sup_bulk_update_screen(submod_updaters, from_submod_screen=False):
                     if submod_updater.update_exception is not None
                 ]
                 if len(exceptions) > 0:
-                    text "Some errors have occurred during updating. Check the log for details.":
+                    text "Some errors have occurred during updating. Check 'submod_log.txt' for details.":
                         xalign 0.5
                         text_align 0.5
 
