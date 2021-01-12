@@ -1292,10 +1292,12 @@ init -991 python in sup_utils:
                         and renpy.windows
                     ):
                         try:
-                            # Just in case clean this up
+                            # Just in case
                             self.__delete_update_files(temp_files_dir)
                             # Handle the fp
                             temp_files_dir = "\\\\?\\" + os.path.normpath(temp_files_dir)
+                            temp_file = "\\\\?\\" + os.path.normpath(temp_file)
+                            update_dir = "\\\\?\\" + os.path.normpath(update_dir)
                             # Try to unzip again
                             with ZipFile(temp_file, "r") as update_file:
                                 update_file.extractall(temp_files_dir)
