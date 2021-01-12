@@ -59,11 +59,17 @@ init -991 python in sup_utils:
                 (Default: True)
         """
         message_type = " ERROR" if is_error else " REPORT"
-        formatted_submod_name = " Submod: {0}.".format(submod) if submod is not None else ""
+
+        if submod is not None:
+            formatted_submod_name = " Submod: '{0}'.".format(submod)
+
+        else:
+            formatted_submod_name = ""
+
         if e is not None:
             formatted_e = " Exception: {0}".format(e)
             if not formatted_e.endswith("."):
-                formatted_e = formatted_e + "."
+                formatted_e += "."
 
         else:
             formatted_e = ""
@@ -1287,9 +1293,17 @@ init -991 python in sup_utils:
                     # If this is an exception about fps lenght on windows,
                     # we can try to handle it
                     if (
-                        isinstance(e, IOError)
-                        and e.errno == 2
-                        and renpy.windows
+                        renpy.windows
+                        and (
+                            (
+                                isinstance(e, IOError)
+                                and e.errno == 2
+                            )
+                            or (
+                                isinstance(e, WindowsError)
+                                and e.winerror in (3, 123, 206)
+                            )
+                        )
                     ):
                         try:
                             # Just in case
@@ -1330,7 +1344,7 @@ init -991 python in sup_utils:
                 # even if we fail here, it's too late to abort now
                 # but we can log exceptions
                 if exceptions:
-                    SubmodUpdaterError("Failed to move update files. Submod: {0}. Exceptions:\n{1}".format(self.id, "\n - ".join(exceptions)))
+                    SubmodUpdaterError("Failed to move update files. Submod: '{0}'. Exceptions:\n{1}".format(self.id, "\n - ".join(exceptions)))
 
                     # self.__delete_update_files(temp_files_dir)
 
