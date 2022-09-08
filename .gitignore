@@ -1,0 +1,7 @@
+**/*.vscode
+
+*.rpa
+*.rpy[cbm]
+
+__pycache__
+*.pyc
